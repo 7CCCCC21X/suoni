@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Soneium 评分批量查询</title>
+  <style>
+    :root { --radius: 10px; --border:#e5e7eb; --muted:#6b7280; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif;
+      color: #111827; background: #f8fafc;
+    }
+    .container {
+      max-width: 1100px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 20px 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    h1 { margin: 0 0 12px; font-size: 20px; }
+    .desc { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+    textarea {
+      width: 100%; min-height: 140px; resize: vertical; padding: 12px 14px;
+      border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; line-height: 1.5;
+    }
+    .controls { display: flex; gap: 12px; align-items: center; margin: 12px 0 8px; flex-wrap: wrap; }
+    button {
+      border: 1px solid #d1d5db; background: #111827; color: #fff; border-radius: 8px;
+      padding: 10px 16px; cursor: pointer; font-size: 14px;
+    }
+    button.secondary { background: #fff; color:#111827; }
+    button:disabled { opacity: .65; cursor: not-allowed; }
+    .hint { color: var(--muted); font-size: 13px; }
+    .stats { margin: 8px 0 12px; font-size: 14px; }
+    .table-wrap { border:1px solid var(--border); border-radius: var(--radius); overflow: hidden; background:#fff; }
+    table { width:100%; border-collapse: collapse; }
+    thead th {
+      position: sticky; top: 0; background: #f3f4f6; font-weight: 600;
+      text-align: left; font-size: 13px; color:#374151; border-bottom:1px solid var(--border); padding:10px;
+    }
+    tbody td {
+      border-bottom:1px solid #f3f4f6; padding:10px; font-size: 13px; vertical-align: top;
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    .ok { color:#059669; font-weight:600; }
+    .no { color:#dc2626; font-weight:600; }
+    .muted { color: var(--muted); }
+    .badge {
+      display:inline-block; padding:2px 6px; border:1px solid #e5e7eb; border-radius:999px; font-size:12px; color:#374151;
+      background:#fafafa;
+    }
+    .footer { color: var(--muted); font-size: 12px; text-align: right; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Soneium 评分批量查询</h1>
+    <div class="desc">将多个地址按行粘贴，每行一个地址。点击「开始查询」后，将通过本页的 <code class="badge">/api/soneium</code> 代理转发至官方接口，避免 CORS。</div>
+
+    <textarea id="addrInput" placeholder="例如：
+0x09dCAe886c35E45f2545C0087725e36e18b032eB
+0x3f2484D2b0f35Ee2BBc1f2ac632fa885FCC9bf7F
+0xe0aE1c69420953CFfEfB4efeFf0Aa9BAe6a28884"></textarea>
+
+    <div class="controls">
+      <button id="startBtn">开始查询</button>
+      <button id="clearBtn" class="secondary">清空结果</button>
+      <span class="hint">提示：默认并发 6 个请求，保持输入顺序显示。</span>
+    </div>
+
+    <div id="stats" class="stats muted">尚未开始</div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:56px;">#</th>
+            <th style="min-width:380px;">地址</th>
+            <th>总分</th>
+            <th>基础分</th>
+            <th>加分</th>
+            <th>Season</th>
+            <th>资格</th>
+            <th>状态</th>
+            <th>流动性分（协议分）</th>
+            <th>徽章</th>
+            <th>创建时间</th>
+            <th>更新时间</th>
+            <th>原始返回</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="footer">数据源：<span class="mono">portal.soneium.org/api/profile/calculator</span></div>
+  </div>
+
+  <script>
+    const PROXY_BASE = '/api/soneium'; // 若部署到自定义域名，可写成 'https://你的域名/api/soneium'
+    const startBtn = document.getElementById('startBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const addrInput = document.getElementById('addrInput');
+    const tbody = document.getElementById('tbody');
+    const statsEl = document.getElementById('stats');
+
+    function parseAddresses(raw) {
+      return Array.from(new Set(
+        raw.split(/\s+/).map(s => s.trim()).filter(Boolean)
+      ));
+    }
+    function isAddress(s) {
+      return /^0x[a-fA-F0-9]{40}$/.test(s);
+    }
+    function fmtNum(n, digits=2) {
+      if (n === null || n === undefined || isNaN(n)) return '';
+      const num = Number(n);
+      return Number.isInteger(num) ? String(num) : num.toFixed(digits);
+    }
+    function fmtDate(s) {
+      if (!s) return '';
+      const d = new Date(s);
+      if (isNaN(d)) return s;
+      return d.toLocaleString();
+    }
+    function rowSkeleton(i, addr) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono">${i+1}</td>
+        <td class="mono">${addr}</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">查询中…</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+      `;
+      return tr;
+    }
+    function updateRow(tr, data, error) {
+      const tds = tr.querySelectorAll('td');
+      if (error) {
+        tds[7].innerHTML = `<span class="no">错误</span>`;
+        tds[12].textContent = String(error);
+        return;
+      }
+      // API 返回为数组（示例里是单元素）
+      const item = Array.isArray(data) ? data[0] : data;
+      if (!item) {
+        tds[7].innerHTML = `<span class="no">无返回</span>`;
+        return;
+      }
+      tds[2].textContent = fmtNum(item.totalScore, 2);
+      tds[3].textContent = fmtNum(item.baseScore, 4);
+      tds[4].textContent = fmtNum(item.bonusPoints, 2);
+      tds[5].textContent = item.season ?? '';
+      tds[6].innerHTML = item.isEligible ? `<span class="ok">✅ 是</span>` : `<span class="no">❌ 否</span>`;
+      tds[7].textContent = item.status ?? '';
+      tds[8].textContent = fmtNum(item.liquidityContributionPoints, 2);
+      const badges = Array.isArray(item.badgesCollected) ? item.badgesCollected : [];
+      tds[9].innerHTML = badges.length ? `<span class="badge" title="${badges.join(', ')}">${badges.length} 个</span>` : `<span class="muted">0</span>`;
+      tds[10].textContent = fmtDate(item.createdAt);
+      tds[11].textContent = fmtDate(item.updatedAt);
+      tds[12].textContent = ''; // 可按需显示 JSON
+      tds[12].title = JSON.stringify(item, null, 2);
+    }
+
+    async function fetchOne(addr) {
+      const url = `${PROXY_BASE}?address=${encodeURIComponent(addr)}`;
+      const res = await fetch(url, { method: 'GET' });
+      const text = await res.text();
+      let json;
+      try { json = JSON.parse(text); } catch (e) {
+        throw new Error(`无法解析返回：${text?.slice(0,200) || '空'}`);
+      }
+      if (!res.ok) {
+        // 后端可能返回错误描述
+        const msg = (json && (json.message || json.error)) ? (json.message || json.error) : `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return json;
+    }
+
+    async function runBatch(addresses, concurrency = 6) {
+      statsEl.textContent = `共 ${addresses.length} 个地址，开始查询…`;
+      // 渲染骨架
+      tbody.innerHTML = '';
+      const rows = addresses.map((addr, i) => {
+        const tr = rowSkeleton(i, addr);
+        tbody.appendChild(tr);
+        return tr;
+      });
+
+      let done = 0, okCount = 0, eligCount = 0;
+
+      function updateStats() {
+        statsEl.innerHTML = `进度：${done}/${addresses.length} &nbsp;|&nbsp; 成功 ${okCount} &nbsp;|&nbsp; 资格 ✅ ${eligCount}`;
+      }
+
+      // 简单并发池
+      let cursor = 0;
+      async function worker() {
+        while (cursor < addresses.length) {
+          const idx = cursor++;
+          const addr = addresses[idx];
+          try {
+            const data = await fetchOne(addr);
+            updateRow(rows[idx], data, null);
+            okCount++;
+            const item = Array.isArray(data) ? data[0] : data;
+            if (item && item.isEligible) eligCount++;
+          } catch (err) {
+            updateRow(rows[idx], null, err.message || String(err));
+          } finally {
+            done++; updateStats();
+          }
+        }
+      }
+
+      const workers = Array.from({length: Math.min(concurrency, addresses.length)}, worker);
+      await Promise.all(workers);
+      statsEl.innerHTML += ' &nbsp;|&nbsp; 完成 ✅';
+    }
+
+    startBtn.addEventListener('click', async () => {
+      const list = parseAddresses(addrInput.value);
+      const addresses = list.filter(isAddress);
+      const invalids = list.filter(x => !isAddress(x));
+      if (addresses.length === 0) {
+        alert('请输入至少一个有效的 0x 地址（每行一个）。');
+        return;
+      }
+      if (invalids.length) {
+        console.warn('无效地址已忽略：', invalids);
+      }
+      startBtn.disabled = true; clearBtn.disabled = true;
+      try {
+        await runBatch(addresses, 6);
+      } finally {
+        startBtn.disabled = false; clearBtn.disabled = false;
+      }
+    });
+
+    clearBtn.addEventListener('click', () => {
+      addrInput.value = '';
+      tbody.innerHTML = '';
+      statsEl.textContent = '已清空';
+    });
+  </script>
+</body>
+</html>
