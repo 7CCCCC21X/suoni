@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Soneium 积分批量查询</title>
+  <title>Soneium 评分批量查询</title>
   <style>
     :root { --radius: 10px; --border:#e5e7eb; --muted:#6b7280; }
     * { box-sizing: border-box; }
@@ -13,7 +13,7 @@
       color: #111827; background: #f8fafc;
     }
     .container {
-      max-width: 1100px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
+      max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
       border-radius: var(--radius); padding: 20px 20px 8px;
       box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
@@ -44,12 +44,6 @@
       border-bottom:1px solid #f3f4f6; padding:10px; font-size: 13px; vertical-align: top;
     }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-    .ok { color:#059669; font-weight:600; }
-    .no { color:#dc2626; font-weight:600; }
-    .badge {
-      display:inline-block; padding:2px 6px; border:1px solid #e5e7eb; border-radius:999px; font-size:12px; color:#374151;
-      background:#fafafa;
-    }
     .footer { color: var(--muted); font-size: 12px; text-align: right; margin-top: 8px; }
   </style>
 </head>
@@ -58,7 +52,10 @@
     <h1>Soneium 积分批量查询</h1>
     <div class="desc">将多个地址按行粘贴，每行一个地址</div>
 
-    <textarea id="addrInput" placeholder=></textarea>
+    <textarea id="addrInput" placeholder="例如：
+0x09dCAe886c35E45f2545C0087725e36e18b032eB
+0x3f2484D2b0f35Ee2BBc1f2ac632fa885FCC9bf7F
+0xe0aE1c69420953CFfEfB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
       <button id="startBtn">开始查询</button>
@@ -71,25 +68,18 @@
       <table>
         <thead>
           <tr>
-            <th data-sort="index" style="width:56px;" class="sortable"># <span class="arrow"></span></th>
-            <th data-sort="address" style="min-width:380px;" class="sortable">地址 <span class="arrow"></span></th>
             <th data-sort="total" class="sortable">总分 <span class="arrow"></span></th>
             <th data-sort="base" class="sortable">基础分 <span class="arrow"></span></th>
-            <th data-sort="bonus" class="sortable">加分 <span class="arrow"></span></th>
-            <th data-sort="season" class="sortable">Season <span class="arrow"></span></th>
-            <th data-sort="eligible" class="sortable">资格 <span class="arrow"></span></th>
-            <th data-sort="status" class="sortable">状态 <span class="arrow"></span></th>
-            <th data-sort="liquidity" class="sortable">流动性分（协议分） <span class="arrow"></span></th>
-            <th data-sort="badges" class="sortable">徽章 <span class="arrow"></span></th>
+            <th data-sort="liquidity" class="sortable">流动性余额 <span class="arrow"></span></th>
             <th data-sort="created" class="sortable">创建时间 <span class="arrow"></span></th>
             <th data-sort="updated" class="sortable">更新时间 <span class="arrow"></span></th>
-            <th>原始返回</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
 
+    <div class="footer">数据源代理：<span class="mono">/api/soneium</span></div>
   </div>
 
   <script>
@@ -121,31 +111,17 @@
       if (isNaN(d)) return s;
       return d.toLocaleString();
     }
-    function rowSkeleton(i, addr) {
+
+    function rowSkeleton() {
       const tr = document.createElement('tr');
-      tr.dataset.index = i.toString();
-      tr.dataset.address = addr.toLowerCase();
-      // 数值字段默认空，避免排序误差
+      // 仅保留 5 列
       tr.dataset.total = '';
       tr.dataset.base = '';
-      tr.dataset.bonus = '';
-      tr.dataset.season = '';
-      tr.dataset.eligible = '';
-      tr.dataset.status = '';
       tr.dataset.liquidity = '';
-      tr.dataset.badges = '';
       tr.dataset.created = '';
       tr.dataset.updated = '';
       tr.innerHTML = `
-        <td class="mono">${i+1}</td>
-        <td class="mono">${addr}</td>
-        <td class="mono muted">-</td>
-        <td class="mono muted">-</td>
-        <td class="mono muted">-</td>
-        <td class="mono muted">-</td>
-        <td class="mono muted">-</td>
         <td class="mono muted">查询中…</td>
-        <td class="mono muted">-</td>
         <td class="mono muted">-</td>
         <td class="mono muted">-</td>
         <td class="mono muted">-</td>
@@ -153,34 +129,32 @@
       `;
       return tr;
     }
+
     function updateRow(tr, data, error) {
       const tds = tr.querySelectorAll('td');
       if (error) {
-        tds[7].innerHTML = `<span class="no">错误</span>`;
-        tds[12].textContent = String(error);
+        tds[0].textContent = '错误';
+        tds[1].textContent = '-';
+        tds[2].textContent = '-';
+        tds[3].textContent = '-';
+        tds[4].textContent = '-';
+        tr.title = String(error);
         return;
       }
       const item = Array.isArray(data) ? data[0] : data;
       if (!item) {
-        tds[7].innerHTML = `<span class="no">无返回</span>`;
+        tds[0].textContent = '无返回';
         return;
       }
-      // 写入显示
-      tds[2].textContent = fmtNum(item.totalScore, 2);
-      tds[3].textContent = fmtNum(item.baseScore, 4);
-      tds[4].textContent = fmtNum(item.bonusPoints, 2);
-      tds[5].textContent = item.season ?? '';
-      tds[6].innerHTML = item.isEligible ? `<span class="ok">✅ 是</span>` : `<span class="no">❌ 否</span>`;
-      tds[7].textContent = item.status ?? '';
-      tds[8].textContent = fmtNum(item.liquidityContributionPoints, 2);
-      const badges = Array.isArray(item.badgesCollected) ? item.badgesCollected : [];
-      tds[9].innerHTML = badges.length ? `<span class="badge" title="${badges.join(', ')}">${badges.length} 个</span>` : `<span class="muted">0</span>`;
-      tds[10].textContent = fmtDate(item.createdAt);
-      tds[11].textContent = fmtDate(item.updatedAt);
-      tds[12].textContent = '';
-      tds[12].title = JSON.stringify(item, null, 2);
+      // 显示 5 列
+      tds[0].textContent = fmtNum(item.totalScore, 2);
+      tds[1].textContent = fmtNum(item.baseScore, 4);
+      tds[2].textContent = fmtNum(item.liquidityContributionPoints, 2); // 流动性余额 = liquidityContributionPoints
+      tds[3].textContent = fmtDate(item.createdAt);
+      tds[4].textContent = fmtDate(item.updatedAt);
+      tr.title = JSON.stringify(item, null, 2); // 保留原始返回到 tooltip
 
-      // 写入 dataset 供排序/统计
+      // dataset 供排序/统计
       const toMs = (x) => x ? Date.parse(x) : '';
       const numOrEmpty = (x) => {
         const v = Number(x);
@@ -188,12 +162,7 @@
       };
       tr.dataset.total = numOrEmpty(item.totalScore);
       tr.dataset.base = numOrEmpty(item.baseScore);
-      tr.dataset.bonus = numOrEmpty(item.bonusPoints);
-      tr.dataset.season = numOrEmpty(item.season);
-      tr.dataset.eligible = item.isEligible ? '1' : '0';
-      tr.dataset.status = item.status || '';
       tr.dataset.liquidity = numOrEmpty(item.liquidityContributionPoints);
-      tr.dataset.badges = String(badges.length);
       tr.dataset.created = toMs(item.createdAt) || '';
       tr.dataset.updated = toMs(item.updatedAt) || '';
     }
@@ -213,36 +182,32 @@
       return json;
     }
 
-    function updateStats(done, total, okCount, eligCount) {
-      // 计算总积分（Σ totalScore）
+    function updateStats(done, total, okCount) {
+      // Σ totalScore
       let sum = 0;
       tbody.querySelectorAll('tr').forEach(tr => {
         const v = parseFloat(tr.dataset.total);
         if (Number.isFinite(v)) sum += v;
       });
-      const parts = [
+      statsEl.innerHTML = [
         `进度：${done}/${total}`,
         `成功 ${okCount}`,
-        `资格 ✅ ${eligCount}`,
         `总积分 Σ：${fmtNum(sum, 2)}`
-      ];
-      statsEl.innerHTML = parts.join(' &nbsp;|&nbsp; ');
+      ].join(' &nbsp;|&nbsp; ');
     }
 
     async function runBatch(addresses, concurrency = 6) {
       statsEl.textContent = `共 ${addresses.length} 个地址，开始查询…`;
-      // 渲染骨架
       tbody.innerHTML = '';
-      const rows = addresses.map((addr, i) => {
-        const tr = rowSkeleton(i, addr);
+      const rows = addresses.map(() => {
+        const tr = rowSkeleton();
         tbody.appendChild(tr);
         return tr;
       });
 
-      let done = 0, okCount = 0, eligCount = 0;
-      updateStats(done, addresses.length, okCount, eligCount);
+      let done = 0, okCount = 0;
+      updateStats(done, addresses.length, okCount);
 
-      // 并发池（默认 6）
       let cursor = 0;
       async function worker() {
         while (cursor < addresses.length) {
@@ -252,13 +217,11 @@
             const data = await fetchOne(addr);
             updateRow(rows[idx], data, null);
             okCount++;
-            const item = Array.isArray(data) ? data[0] : data;
-            if (item && item.isEligible) eligCount++;
           } catch (err) {
             updateRow(rows[idx], null, err.message || String(err));
           } finally {
             done++;
-            updateStats(done, addresses.length, okCount, eligCount);
+            updateStats(done, addresses.length, okCount);
           }
         }
       }
@@ -273,8 +236,8 @@
     ths.forEach(th => {
       th.addEventListener('click', () => {
         const key = th.dataset.sort;
-        const numericOrDateKeys = new Set(['index','total','base','bonus','season','eligible','liquidity','badges','created','updated']);
-        // 新列默认：数值/时间降序；文本升序
+        const numericOrDateKeys = new Set(['total','base','liquidity','created','updated']);
+        // 默认：数值/时间列第一次点击为降序
         const defaultAsc = !numericOrDateKeys.has(key);
         if (sortState.key === key) {
           sortState.asc = !sortState.asc;
@@ -288,11 +251,11 @@
     });
 
     function getVal(tr, key) {
-      const ds = tr.dataset;
-      if (key === 'address' || key === 'status') return (ds[key] || '');
-      if (key === 'created' || key === 'updated') return parseInt(ds[key] || '', 10);
-      // 其他均按数值处理
-      const v = parseFloat(ds[key]);
+      if (key === 'created' || key === 'updated') {
+        const v = parseInt(tr.dataset[key] || '', 10);
+        return Number.isFinite(v) ? v : NaN;
+      }
+      const v = parseFloat(tr.dataset[key]);
       return Number.isFinite(v) ? v : NaN;
     }
 
@@ -304,20 +267,11 @@
         const aNum = typeof av === 'number' && !isNaN(av);
         const bNum = typeof bv === 'number' && !isNaN(bv);
         if (aNum && bNum) return (av - bv) * dir;
-        if (aNum && !bNum) return -1; // 数值优先
+        if (aNum && !bNum) return -1;
         if (!aNum && bNum) return 1;
-        if (!aNum && !bNum) {
-          // 字符串（地址/状态）
-          const as = String(av || ''), bs = String(bv || '');
-          return as.localeCompare(bs) * dir;
-        }
+        return 0;
       });
-      // 重新附加并重写显示序号
-      rows.forEach((tr, i) => {
-        tbody.appendChild(tr);
-        const tdIndex = tr.querySelector('td');
-        if (tdIndex) tdIndex.textContent = String(i + 1);
-      });
+      rows.forEach(tr => tbody.appendChild(tr)); // 直接重新挂载
     }
 
     function renderSortIndicators() {
@@ -347,7 +301,7 @@
       startBtn.disabled = true; clearBtn.disabled = true;
       sortState.key = null; renderSortIndicators();
       try {
-        await runBatch(addresses, 6); // 并发保留为 6，但界面不提示
+        await runBatch(addresses, 6);
       } finally {
         startBtn.disabled = false; clearBtn.disabled = false;
       }
