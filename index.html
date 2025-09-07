@@ -13,7 +13,7 @@
       color: #111827; background: #f8fafc;
     }
     .container {
-      max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
+      max-width: 1000px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
       border-radius: var(--radius); padding: 20px 20px 8px;
       box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
@@ -49,10 +49,13 @@
 </head>
 <body>
   <div class="container">
-    <h1>Soneium 积分批量查询</h1>
+    <h1>Soneium 评分批量查询</h1>
     <div class="desc">将多个地址按行粘贴，每行一个地址</div>
 
-    <textarea id="addrInput" placeholder=></textarea>
+    <textarea id="addrInput" placeholder="例如：
+0x09dCAe886c35E45f2545C0087725e36e18b032eB
+0x3f2484D2b0f35Ee2BBc1f2ac632fa885FCC9bf7F
+0xe0aE1c69420953CFfEfB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
       <button id="startBtn">开始查询</button>
@@ -65,6 +68,8 @@
       <table>
         <thead>
           <tr>
+            <th data-sort="index" style="width:56px;" class="sortable"># <span class="arrow"></span></th>
+            <th data-sort="address" style="min-width:360px;" class="sortable">地址 <span class="arrow"></span></th>
             <th data-sort="total" class="sortable">总分 <span class="arrow"></span></th>
             <th data-sort="base" class="sortable">基础分 <span class="arrow"></span></th>
             <th data-sort="liquidity" class="sortable">流动性余额 <span class="arrow"></span></th>
@@ -76,6 +81,7 @@
       </table>
     </div>
 
+    <div class="footer">数据源代理：<span class="mono">/api/soneium</span></div>
   </div>
 
   <script>
@@ -108,15 +114,19 @@
       return d.toLocaleString();
     }
 
-    function rowSkeleton() {
+    // 行骨架：包含“#、地址、总分、基础分、流动性余额、创建时间、更新时间”
+    function rowSkeleton(i, addr) {
       const tr = document.createElement('tr');
-      // 仅保留 5 列
+      tr.dataset.index = String(i);                // 原始序号（用于按原顺序排序）
+      tr.dataset.address = addr.toLowerCase();     // 供排序
       tr.dataset.total = '';
       tr.dataset.base = '';
       tr.dataset.liquidity = '';
       tr.dataset.created = '';
       tr.dataset.updated = '';
       tr.innerHTML = `
+        <td class="mono">${i+1}</td>
+        <td class="mono">${addr}</td>
         <td class="mono muted">查询中…</td>
         <td class="mono muted">-</td>
         <td class="mono muted">-</td>
@@ -127,28 +137,28 @@
     }
 
     function updateRow(tr, data, error) {
-      const tds = tr.querySelectorAll('td');
+      const tds = tr.querySelectorAll('td'); // [#, 地址, 总分, 基础分, 流动性余额, 创建, 更新]
       if (error) {
-        tds[0].textContent = '错误';
-        tds[1].textContent = '-';
-        tds[2].textContent = '-';
+        tds[2].textContent = '错误';
         tds[3].textContent = '-';
         tds[4].textContent = '-';
+        tds[5].textContent = '-';
+        tds[6].textContent = '-';
         tr.title = String(error);
         return;
       }
       const item = Array.isArray(data) ? data[0] : data;
       if (!item) {
-        tds[0].textContent = '无返回';
+        tds[2].textContent = '无返回';
         return;
       }
-      // 显示 5 列
-      tds[0].textContent = fmtNum(item.totalScore, 2);
-      tds[1].textContent = fmtNum(item.baseScore, 4);
-      tds[2].textContent = fmtNum(item.liquidityContributionPoints, 2); // 流动性余额 = liquidityContributionPoints
-      tds[3].textContent = fmtDate(item.createdAt);
-      tds[4].textContent = fmtDate(item.updatedAt);
-      tr.title = JSON.stringify(item, null, 2); // 保留原始返回到 tooltip
+      // 写入显示
+      tds[2].textContent = fmtNum(item.totalScore, 2);
+      tds[3].textContent = fmtNum(item.baseScore, 4);
+      tds[4].textContent = fmtNum(item.liquidityContributionPoints, 2); // 流动性余额
+      tds[5].textContent = fmtDate(item.createdAt);
+      tds[6].textContent = fmtDate(item.updatedAt);
+      tr.title = JSON.stringify(item, null, 2); // tooltip 展示原始 JSON
 
       // dataset 供排序/统计
       const toMs = (x) => x ? Date.parse(x) : '';
@@ -195,8 +205,8 @@
     async function runBatch(addresses, concurrency = 6) {
       statsEl.textContent = `共 ${addresses.length} 个地址，开始查询…`;
       tbody.innerHTML = '';
-      const rows = addresses.map(() => {
-        const tr = rowSkeleton();
+      const rows = addresses.map((addr, i) => {
+        const tr = rowSkeleton(i, addr);
         tbody.appendChild(tr);
         return tr;
       });
@@ -232,9 +242,9 @@
     ths.forEach(th => {
       th.addEventListener('click', () => {
         const key = th.dataset.sort;
+        // 数值/时间默认降序；文本（address）与 index 默认升序
         const numericOrDateKeys = new Set(['total','base','liquidity','created','updated']);
-        // 默认：数值/时间列第一次点击为降序
-        const defaultAsc = !numericOrDateKeys.has(key);
+        const defaultAsc = (key === 'address' || key === 'index') ? true : !numericOrDateKeys.has(key);
         if (sortState.key === key) {
           sortState.asc = !sortState.asc;
         } else {
@@ -247,11 +257,11 @@
     });
 
     function getVal(tr, key) {
-      if (key === 'created' || key === 'updated') {
-        const v = parseInt(tr.dataset[key] || '', 10);
-        return Number.isFinite(v) ? v : NaN;
-      }
-      const v = parseFloat(tr.dataset[key]);
+      const ds = tr.dataset;
+      if (key === 'address') return (ds.address || '');
+      if (key === 'index')   return parseInt(ds.index || '', 10);
+      if (key === 'created' || key === 'updated') return parseInt(ds[key] || '', 10);
+      const v = parseFloat(ds[key]);
       return Number.isFinite(v) ? v : NaN;
     }
 
@@ -265,9 +275,16 @@
         if (aNum && bNum) return (av - bv) * dir;
         if (aNum && !bNum) return -1;
         if (!aNum && bNum) return 1;
-        return 0;
+        // 字符串（仅 address）
+        const as = String(av || ''), bs = String(bv || '');
+        return as.localeCompare(bs) * dir;
       });
-      rows.forEach(tr => tbody.appendChild(tr)); // 直接重新挂载
+      // 重新附加并重写“显示序号”（从 1 开始）
+      rows.forEach((tr, i) => {
+        tbody.appendChild(tr);
+        const tdIndex = tr.querySelector('td');
+        if (tdIndex) tdIndex.textContent = String(i + 1);
+      });
     }
 
     function renderSortIndicators() {
