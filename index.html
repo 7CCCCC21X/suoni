@@ -7,47 +7,25 @@
   <style>
     :root { --radius: 10px; --border:#e5e7eb; --muted:#6b7280; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0; padding: 24px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif;
-      color: #111827; background: #f8fafc;
-    }
-    .container {
-      max-width: 1200px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 20px 20px 8px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-    }
+    body { margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; color: #111827; background: #f8fafc; }
+    .container { max-width: 1200px; margin: 0 auto; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 20px 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
     h1 { margin: 0 0 12px; font-size: 20px; }
     .desc { color: #374151; font-size: 14px; margin-bottom: 16px; }
-    textarea {
-      width: 100%; min-height: 140px; resize: vertical; padding: 12px 14px;
-      border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; line-height: 1.5;
-    }
+    textarea { width: 100%; min-height: 140px; resize: vertical; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; line-height: 1.5; }
     .controls { display: flex; gap: 12px; align-items: center; margin: 12px 0 8px; flex-wrap: wrap; }
-    .inp {
-      display:inline-flex; align-items:center; gap:6px; padding:8px 10px; border:1px solid var(--border);
-      border-radius:8px; background:#fff; color:#111827; font-size:14px;
-    }
+    .inp { display:inline-flex; align-items:center; gap:6px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:#fff; color:#111827; font-size:14px; }
     .inp input { width:64px; border:none; outline:none; font-size:14px; }
-    button {
-      border: 1px solid #d1d5db; background: #111827; color: #fff; border-radius: 8px;
-      padding: 10px 16px; cursor: pointer; font-size: 14px;
-    }
+    button { border: 1px solid #d1d5db; background: #111827; color: #fff; border-radius: 8px; padding: 10px 16px; cursor: pointer; font-size: 14px; }
     button.secondary { background: #fff; color:#111827; }
     button:disabled { opacity: .65; cursor: not-allowed; }
     .stats { margin: 8px 0 12px; font-size: 14px; color: #374151; }
     .muted { color: var(--muted); }
     .table-wrap { border:1px solid var(--border); border-radius: var(--radius); overflow: auto; background:#fff; }
     table { width:100%; border-collapse: collapse; min-width: 1080px; }
-    thead th {
-      position: sticky; top: 0; background: #f3f4f6; font-weight: 600;
-      text-align: left; font-size: 13px; color:#374151; border-bottom:1px solid var(--border); padding:10px;
-    }
+    thead th { position: sticky; top: 0; background: #f3f4f6; font-weight: 600; text-align: left; font-size: 13px; color:#374151; border-bottom:1px solid var(--border); padding:10px; }
     thead th.sortable { cursor: pointer; user-select: none; }
     thead th .arrow { margin-left: 6px; font-size: 11px; color: var(--muted); }
-    tbody td {
-      border-bottom:1px solid #f3f4f6; padding:10px; font-size: 13px; vertical-align: top;
-    }
+    tbody td { border-bottom:1px solid #f3f4f6; padding:10px; font-size: 13px; vertical-align: top; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
     .footer { color: var(--muted); font-size: 12px; text-align: right; margin-top: 8px; }
   </style>
@@ -93,9 +71,7 @@
       </table>
     </div>
 
-    <div class="footer">
-      数据源：<span class="mono">/api/soneium</span>（base/tx/bonus 统一代理）
-    </div>
+    <div class="footer">数据源：<span class="mono">/api/soneium</span>（calc/tx/bonus 统一代理）</div>
   </div>
 
   <script>
@@ -135,10 +111,10 @@
       return Number.isFinite(v) ? String(v) : '';
     };
 
-    // —— 行骨架（增了 5 列） —— //
+    // —— 行骨架 —— //
     function rowSkeleton(i, addr) {
       const tr = document.createElement('tr');
-      tr.dataset.index = String(i);                // 原始序号
+      tr.dataset.index = String(i);
       tr.dataset.address = addr.toLowerCase();
 
       tr.dataset.total = '';
@@ -148,7 +124,7 @@
       tr.dataset.seasonTx = '';
       tr.dataset.uniqueDays = '';
       tr.dataset.streak = '';
-      tr.dataset.bonusRatio = '';   // 以 0~1 的比例存储
+      tr.dataset.bonusRatio = '';
       tr.dataset.created = '';
       tr.dataset.updated = '';
 
@@ -169,32 +145,47 @@
       return tr;
     }
 
-    // —— 写入：基础接口 —— //
+    // —— 写入：calculator（容错字段名） —— //
     function updateRowBase(tr, item) {
-      const tds = tr.querySelectorAll('td'); // [#, 地址, 总分, 基础分, 流动性, 季分, 季TX, 活跃天, 连续天, 加成, 创建, 更新]
+      const tds = tr.querySelectorAll('td');
       if (!item) { tds[2].textContent = '无返回'; return; }
-      tds[2].textContent = fmtNum(item.totalScore, 2);
-      tds[3].textContent = fmtNum(item.baseScore, 4);
-      tds[4].textContent = fmtNum(item.liquidityContributionPoints, 2);
-      tds[10].textContent = fmtDate(item.createdAt);
-      tds[11].textContent = fmtDate(item.updatedAt);
-      tr.title = JSON.stringify(item, null, 2);
 
-      tr.dataset.total = numOrEmpty(item.totalScore);
-      tr.dataset.base = numOrEmpty(item.baseScore);
-      tr.dataset.liquidity = numOrEmpty(item.liquidityContributionPoints);
-      tr.dataset.created = toMs(item.createdAt) || '';
-      tr.dataset.updated = toMs(item.updatedAt) || '';
+      // 兼容不同字段名
+      const total = item.totalScore ?? item.score ?? item.points;
+      const base  = item.baseScore ?? item.base ?? item.basePoints;
+      const liq   = item.liquidityContributionPoints
+                 ?? item.allTimeLiquidityScore
+                 ?? item.tvl?.allTimeLiquidityScore
+                 ?? item.tvl?.scoreContributionUsd;
+
+      // 时间容错
+      const createdAt = item.createdAt
+                     ?? (item.scoreCreatedAt ? new Date(item.scoreCreatedAt).toISOString() : undefined);
+      const updatedAt = item.updatedAt
+                     ?? (item.scoreLastUpdated ? new Date(item.scoreLastUpdated).toISOString() : undefined);
+
+      tds[2].textContent = fmtNum(total, 2);
+      tds[3].textContent = base != null ? fmtNum(base, 4) : '';
+      tds[4].textContent = liq  != null ? fmtNum(liq, 2)  : '';
+      tds[10].textContent = fmtDate(createdAt);
+      tds[11].textContent = fmtDate(updatedAt);
+
+      tr.title = JSON.stringify(item, null, 2);
+      tr.dataset.total = numOrEmpty(total);
+      tr.dataset.base = numOrEmpty(base);
+      tr.dataset.liquidity = numOrEmpty(liq);
+      tr.dataset.created = createdAt ? Date.parse(createdAt) : '';
+      tr.dataset.updated = updatedAt ? Date.parse(updatedAt) : '';
     }
 
-    // —— 写入：季活跃接口（tx-per-season） —— //
+    // —— 写入：季活跃（tx-per-season） —— //
     function updateRowSeason(tr, item) {
       const tds = tr.querySelectorAll('td');
       if (!item) return;
-      tds[5].textContent = fmtNum(item.score, 2);             // 季分
-      tds[6].textContent = fmtNum(item.totalTransactions, 0); // 季交易数
-      tds[7].textContent = fmtNum(item.uniqueDays, 0);        // 活跃天
-      tds[8].textContent = fmtNum(item.streak, 0);            // 连续天
+      tds[5].textContent = fmtNum(item.score, 2);
+      tds[6].textContent = fmtNum(item.totalTransactions, 0);
+      tds[7].textContent = fmtNum(item.uniqueDays, 0);
+      tds[8].textContent = fmtNum(item.streak, 0);
 
       tr.dataset.seasonScore = numOrEmpty(item.score);
       tr.dataset.seasonTx    = numOrEmpty(item.totalTransactions);
@@ -202,7 +193,7 @@
       tr.dataset.streak      = numOrEmpty(item.streak);
     }
 
-    // —— 写入：加成任务接口（bonus-dapp） —— //
+    // —— 写入：加成任务（bonus-dapp） —— //
     function updateRowBonus(tr, list) {
       const tds = tr.querySelectorAll('td');
       if (!Array.isArray(list)) return;
@@ -233,18 +224,18 @@
       tds[9].title = lines.length ? lines.join('\n\n') : '—';
 
       const ratio = (totalWeeks > 0) ? (doneWeeks / totalWeeks) : 0;
-      tr.dataset.bonusRatio = String(ratio); // 0~1
+      tr.dataset.bonusRatio = String(ratio);
     }
 
     // —— 请求封装（统一走 /api/soneium） —— //
     async function fetchBase(addr) {
-      const url = `${PROXY_BASE}?address=${encodeURIComponent(addr)}`; // 默认 type=base
-      const res = await fetch(url, { method: 'GET' });
-      const text = await res.text();
-      let json;
-      try { json = JSON.parse(text); } catch { throw new Error(`无法解析返回：${text?.slice(0,200) || '空'}`); }
-      if (!res.ok) throw new Error(json?.message || json?.error || `HTTP ${res.status}`);
-      return Array.isArray(json) ? json[0] : json;
+      const url = `${PROXY_BASE}?address=${encodeURIComponent(addr)}`; // 默认 type=calc
+      const r = await fetch(url);
+      const t = await r.text();
+      let j; try { j = JSON.parse(t); } catch { throw new Error(`calculator 解析失败：${t?.slice(0,200) || '空'}`); }
+      if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
+      // calculator 通常直接返回对象（不是数组）
+      return Array.isArray(j) ? j[0] : j;
     }
 
     async function fetchSeason(addr, season) {
@@ -266,7 +257,7 @@
     }
 
     function updateStats(done, total, okCount) {
-      // Σ totalScore（基础接口）
+      // Σ totalScore（calculator）
       let sum = 0;
       tbody.querySelectorAll('tr').forEach(tr => {
         const v = parseFloat(tr.dataset.total);
@@ -299,7 +290,6 @@
           const addr = addresses[idx];
           const tr = rows[idx];
 
-          // 三个接口并行请求（全部走代理）
           try {
             const [baseRes, seasonRes, bonusRes] = await Promise.allSettled([
               fetchBase(addr),
@@ -354,7 +344,6 @@
     ths.forEach(th => {
       th.addEventListener('click', () => {
         const key = th.dataset.sort;
-        // 数值/时间默认降序；文本（address）与 index 默认升序
         const defaultAsc = (key === 'address' || key === 'index') ? true : !numericOrDateKeys.has(key);
         if (sortState.key === key) {
           sortState.asc = !sortState.asc;
@@ -389,7 +378,6 @@
         const as = String(av || ''), bs = String(bv || '');
         return as.localeCompare(bs) * dir;
       });
-      // 重新附加并重写“显示序号”（从 1 开始）
       rows.forEach((tr, i) => {
         tbody.appendChild(tr);
         const tdIndex = tr.querySelector('td');
