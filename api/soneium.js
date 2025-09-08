@@ -1,20 +1,15 @@
 // pages/api/soneium.js
 /**
- * 统一代理三个上游接口，解决浏览器端 CORS：
- * 1) base  : https://suoni.vercel.app/api/soneium?address=...
+ * 统一代理 3 个上游接口，彻底解决浏览器端 CORS：
+ * 1) calc  : https://portal.soneium.org/api/profile/calculator?address=...
  * 2) tx    : https://portal.soneium.org/api/profile/tx-per-season?address=...&season=1
  * 3) bonus : https://portal.soneium.org/api/profile/bonus-dapp?address=...
  *
- * 前端调用：
- *   /api/soneium?type=base&address=0x...
+ * 前端调用（全部走本路由）：
+ *   /api/soneium?address=0x...                        // 默认 == type=calc
+ *   /api/soneium?type=calc&address=0x...
  *   /api/soneium?type=tx&address=0x...&season=1
  *   /api/soneium?type=bonus&address=0x...
- *
- * 注意：
- * - 做了白名单与参数校验，避免任意转发（SSRF）。
- * - 透传上游 Content-Type，并设置 Access-Control-Allow-Origin: *。
- * - 如果本服务部署在 suoni.vercel.app，同域 self-proxy 会被阻止；
- *   请改用环境变量 BASE_UPSTREAM 指向真正的上游，或把 base 的实现直接收编到该路由。
  */
 
 const CORS_HEADERS = {
@@ -26,7 +21,7 @@ const CORS_HEADERS = {
 
 // 允许的上游（可用环境变量覆盖）
 const UPSTREAMS = {
-  base : process.env.BASE_UPSTREAM  || 'https://suoni.vercel.app/api/soneium',
+  calc : process.env.CALC_UPSTREAM  || 'https://portal.soneium.org/api/profile/calculator',
   tx   : process.env.TX_UPSTREAM    || 'https://portal.soneium.org/api/profile/tx-per-season',
   bonus: process.env.BONUS_UPSTREAM || 'https://portal.soneium.org/api/profile/bonus-dapp',
 };
@@ -44,31 +39,30 @@ function isSelfProxy(target, req) {
 }
 
 export default async function handler(req, res) {
-  // 处理 CORS 预检
+  // CORS 预检
   if (req.method === 'OPTIONS') {
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
     return res.status(204).end();
   }
-
   if (req.method !== 'GET') {
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const url = new URL(req.url, 'http://localhost'); // 仅用于解析 query
-  // 兼容旧调用：不传 type 时默认走 base
-  const typeRaw = url.searchParams.get('type') || url.searchParams.get('up') || 'base';
-  const type = String(typeRaw).toLowerCase();
+  const url = new URL(req.url, 'http://localhost'); // 仅解析 query
+  // 默认走 calculator；兼容 base/calculator 别名
+  const typeRaw = url.searchParams.get('type') || url.searchParams.get('up') || 'calc';
+  const t = String(typeRaw).toLowerCase();
+  const type = (t === 'calculator' || t === 'base') ? 'calc' : t;
 
-  // 基础参数
   const address = url.searchParams.get('address') || '';
   const seasonRaw = url.searchParams.get('season');
   const season = seasonRaw != null && seasonRaw !== '' ? parseInt(seasonRaw, 10) : 1;
 
   // 参数校验
-  if (!['base', 'tx', 'bonus'].includes(type)) {
+  if (!['calc', 'tx', 'bonus'].includes(type)) {
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
-    return res.status(400).json({ error: 'Invalid type', allow: ['base', 'tx', 'bonus'] });
+    return res.status(400).json({ error: 'Invalid type', allow: ['calc', 'tx', 'bonus'] });
   }
   if (!isAddress(address)) {
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
@@ -81,9 +75,9 @@ export default async function handler(req, res) {
 
   // 组装上游 URL（严格白名单）
   let target = '';
-  if (type === 'base') {
+  if (type === 'calc') {
     const qs = new URLSearchParams({ address });
-    target = `${UPSTREAMS.base}?${qs.toString()}`;
+    target = `${UPSTREAMS.calc}?${qs.toString()}`;
   } else if (type === 'tx') {
     const qs = new URLSearchParams({ address, season: String(season) });
     target = `${UPSTREAMS.tx}?${qs.toString()}`;
