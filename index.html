@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Soneium 评分批量查询</title>
+  <title>Soneium 评分批量查询（含季活跃与加成任务）</title>
   <style>
     :root { --radius: 10px; --border:#e5e7eb; --muted:#6b7280; }
     * { box-sizing: border-box; }
@@ -13,7 +13,7 @@
       color: #111827; background: #f8fafc;
     }
     .container {
-      max-width: 1000px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
+      max-width: 1200px; margin: 0 auto; background: #fff; border: 1px solid var(--border);
       border-radius: var(--radius); padding: 20px 20px 8px;
       box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
@@ -24,6 +24,11 @@
       border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; line-height: 1.5;
     }
     .controls { display: flex; gap: 12px; align-items: center; margin: 12px 0 8px; flex-wrap: wrap; }
+    .inp {
+      display:inline-flex; align-items:center; gap:6px; padding:8px 10px; border:1px solid var(--border);
+      border-radius:8px; background:#fff; color:#111827; font-size:14px;
+    }
+    .inp input { width:64px; border:none; outline:none; font-size:14px; }
     button {
       border: 1px solid #d1d5db; background: #111827; color: #fff; border-radius: 8px;
       padding: 10px 16px; cursor: pointer; font-size: 14px;
@@ -32,8 +37,8 @@
     button:disabled { opacity: .65; cursor: not-allowed; }
     .stats { margin: 8px 0 12px; font-size: 14px; color: #374151; }
     .muted { color: var(--muted); }
-    .table-wrap { border:1px solid var(--border); border-radius: var(--radius); overflow: hidden; background:#fff; }
-    table { width:100%; border-collapse: collapse; }
+    .table-wrap { border:1px solid var(--border); border-radius: var(--radius); overflow: auto; background:#fff; }
+    table { width:100%; border-collapse: collapse; min-width: 1080px; }
     thead th {
       position: sticky; top: 0; background: #f3f4f6; font-weight: 600;
       text-align: left; font-size: 13px; color:#374151; border-bottom:1px solid var(--border); padding:10px;
@@ -49,17 +54,19 @@
 </head>
 <body>
   <div class="container">
-    <h1>Soneium 积分批量查询</h1>
+    <h1>Soneium 评分批量查询（含季活跃与加成任务）</h1>
     <div class="desc">将多个地址按行粘贴，每行一个地址</div>
 
     <textarea id="addrInput" placeholder="例如：
-0x09dCAe886c35E45f2545C0087725e36ad8b032eB
-0x3f2484D2b0f35Ee2BBc1f2ac632fa88cvCC9bf7F
-0xe0aE1c69420953CFfEfB4efeFf0Aa9Ber6a28884"></textarea>
+0x09dCAe886c35E45f2545C0087725e36e18b032eB
+0x3f2484D2b0f35Ee2BBc1f2ac632fa885FCC9bf7F
+0xe0aE1c69420953CFfEfB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
+      <span class="inp">赛季 <input id="seasonInput" type="number" value="1" min="0" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
+      <span class="muted">基础查询走代理 <span class="mono">/api/soneium</span>；季活跃与加成任务默认直连 <span class="mono">portal.soneium.org</span></span>
     </div>
 
     <div id="stats" class="stats muted">尚未开始</div>
@@ -73,6 +80,11 @@
             <th data-sort="total" class="sortable">总分 <span class="arrow"></span></th>
             <th data-sort="base" class="sortable">基础分 <span class="arrow"></span></th>
             <th data-sort="liquidity" class="sortable">流动性余额 <span class="arrow"></span></th>
+            <th data-sort="seasonScore" class="sortable">季分 <span class="arrow"></span></th>
+            <th data-sort="seasonTx" class="sortable">季交易数 <span class="arrow"></span></th>
+            <th data-sort="uniqueDays" class="sortable">活跃天 <span class="arrow"></span></th>
+            <th data-sort="streak" class="sortable">连续天 <span class="arrow"></span></th>
+            <th data-sort="bonusRatio" class="sortable">加成周完成 <span class="arrow"></span></th>
             <th data-sort="created" class="sortable">创建时间 <span class="arrow"></span></th>
             <th data-sort="updated" class="sortable">更新时间 <span class="arrow"></span></th>
           </tr>
@@ -81,27 +93,32 @@
       </table>
     </div>
 
-    <div class="footer">数据源代理：<span class="mono">/api/soneium</span></div>
+    <div class="footer">
+      数据源：<span class="mono">/api/soneium</span> ，<span class="mono">https://portal.soneium.org/api/profile/tx-per-season</span> ，<span class="mono">/api/profile/bonus-dapp</span>
+    </div>
   </div>
 
   <script>
-    const PROXY_BASE = '/api/soneium';
+    // —— 配置 —— //
+    const PROXY_BASE = '/api/soneium';                 // 你的基础接口代理
+    const PORTAL_ORIGIN = 'https://portal.soneium.org';// 如遇 CORS，可改为你的代理（例如：'/api/portal'）
+
     const startBtn = document.getElementById('startBtn');
     const clearBtn = document.getElementById('clearBtn');
     const addrInput = document.getElementById('addrInput');
+    const seasonInput = document.getElementById('seasonInput');
     const tbody = document.getElementById('tbody');
     const statsEl = document.getElementById('stats');
 
     const sortState = { key: null, asc: true };
 
+    // —— 工具 —— //
     function parseAddresses(raw) {
       return Array.from(new Set(
         raw.split(/\s+/).map(s => s.trim()).filter(Boolean)
       ));
     }
-    function isAddress(s) {
-      return /^0x[a-fA-F0-9]{40}$/.test(s);
-    }
+    function isAddress(s) { return /^0x[a-fA-F0-9]{40}$/.test(s); }
     function fmtNum(n, digits=2) {
       if (n === null || n === undefined || isNaN(n)) return '';
       const num = Number(n);
@@ -113,17 +130,29 @@
       if (isNaN(d)) return s;
       return d.toLocaleString();
     }
+    const toMs = (x) => x ? Date.parse(x) : '';
+    const numOrEmpty = (x) => {
+      const v = Number(x);
+      return Number.isFinite(v) ? String(v) : '';
+    };
 
-    // 行骨架：包含“#、地址、总分、基础分、流动性余额、创建时间、更新时间”
+    // —— 行骨架（增了 5 列） —— //
     function rowSkeleton(i, addr) {
       const tr = document.createElement('tr');
-      tr.dataset.index = String(i);                // 原始序号（用于按原顺序排序）
-      tr.dataset.address = addr.toLowerCase();     // 供排序
+      tr.dataset.index = String(i);                // 原始序号
+      tr.dataset.address = addr.toLowerCase();
+
       tr.dataset.total = '';
       tr.dataset.base = '';
       tr.dataset.liquidity = '';
+      tr.dataset.seasonScore = '';
+      tr.dataset.seasonTx = '';
+      tr.dataset.uniqueDays = '';
+      tr.dataset.streak = '';
+      tr.dataset.bonusRatio = '';   // 以 0~1 的比例存储
       tr.dataset.created = '';
       tr.dataset.updated = '';
+
       tr.innerHTML = `
         <td class="mono">${i+1}</td>
         <td class="mono">${addr}</td>
@@ -132,40 +161,26 @@
         <td class="mono muted">-</td>
         <td class="mono muted">-</td>
         <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted" title="—">-</td>
+        <td class="mono muted">-</td>
+        <td class="mono muted">-</td>
       `;
       return tr;
     }
 
-    function updateRow(tr, data, error) {
-      const tds = tr.querySelectorAll('td'); // [#, 地址, 总分, 基础分, 流动性余额, 创建, 更新]
-      if (error) {
-        tds[2].textContent = '错误';
-        tds[3].textContent = '-';
-        tds[4].textContent = '-';
-        tds[5].textContent = '-';
-        tds[6].textContent = '-';
-        tr.title = String(error);
-        return;
-      }
-      const item = Array.isArray(data) ? data[0] : data;
-      if (!item) {
-        tds[2].textContent = '无返回';
-        return;
-      }
-      // 写入显示
+    // —— 写入：基础接口 —— //
+    function updateRowBase(tr, item) {
+      const tds = tr.querySelectorAll('td'); // [#, 地址, 总分, 基础分, 流动性, 季分, 季TX, 活跃天, 连续天, 加成, 创建, 更新]
+      if (!item) { tds[2].textContent = '无返回'; return; }
       tds[2].textContent = fmtNum(item.totalScore, 2);
       tds[3].textContent = fmtNum(item.baseScore, 4);
-      tds[4].textContent = fmtNum(item.liquidityContributionPoints, 2); // 流动性余额
-      tds[5].textContent = fmtDate(item.createdAt);
-      tds[6].textContent = fmtDate(item.updatedAt);
-      tr.title = JSON.stringify(item, null, 2); // tooltip 展示原始 JSON
+      tds[4].textContent = fmtNum(item.liquidityContributionPoints, 2);
+      tds[10].textContent = fmtDate(item.createdAt);
+      tds[11].textContent = fmtDate(item.updatedAt);
+      tr.title = JSON.stringify(item, null, 2);
 
-      // dataset 供排序/统计
-      const toMs = (x) => x ? Date.parse(x) : '';
-      const numOrEmpty = (x) => {
-        const v = Number(x);
-        return Number.isFinite(v) ? String(v) : '';
-      };
       tr.dataset.total = numOrEmpty(item.totalScore);
       tr.dataset.base = numOrEmpty(item.baseScore);
       tr.dataset.liquidity = numOrEmpty(item.liquidityContributionPoints);
@@ -173,23 +188,86 @@
       tr.dataset.updated = toMs(item.updatedAt) || '';
     }
 
-    async function fetchOne(addr) {
+    // —— 写入：季活跃接口（tx-per-season） —— //
+    function updateRowSeason(tr, item) {
+      const tds = tr.querySelectorAll('td');
+      if (!item) return;
+      tds[5].textContent = fmtNum(item.score, 2);             // 季分
+      tds[6].textContent = fmtNum(item.totalTransactions, 0); // 季交易数
+      tds[7].textContent = fmtNum(item.uniqueDays, 0);        // 活跃天
+      tds[8].textContent = fmtNum(item.streak, 0);            // 连续天
+
+      tr.dataset.seasonScore = numOrEmpty(item.score);
+      tr.dataset.seasonTx    = numOrEmpty(item.totalTransactions);
+      tr.dataset.uniqueDays  = numOrEmpty(item.uniqueDays);
+      tr.dataset.streak      = numOrEmpty(item.streak);
+    }
+
+    // —— 写入：加成任务接口（bonus-dapp） —— //
+    function updateRowBonus(tr, list) {
+      const tds = tr.querySelectorAll('td');
+      if (!Array.isArray(list)) return;
+
+      const totalWeeks = list.length;
+      let doneWeeks = 0;
+      const lines = [];
+
+      for (const w of list) {
+        const weekId = `W${w.week}-${w.id}`;
+        const parts = [];
+        let weekDone = true;
+        if (Array.isArray(w.quests)) {
+          for (const q of w.quests) {
+            const ok = Boolean(q.isDone || (Number(q.completed) >= Number(q.required)));
+            parts.push(`${q.description}：${q.completed}/${q.required} ${ok ? '✅' : '❌'}`);
+            if (!ok) weekDone = false;
+          }
+        } else {
+          weekDone = false;
+        }
+        if (weekDone) doneWeeks++;
+        lines.push(`${weekId}（${w.name}，加成 ${w.questsBonus}）\n - ${parts.join('\n - ')}`);
+      }
+
+      const ratioText = totalWeeks ? `${doneWeeks}/${totalWeeks}` : '-';
+      tds[9].textContent = ratioText;
+      tds[9].title = lines.length ? lines.join('\n\n') : '—';
+
+      const ratio = (totalWeeks > 0) ? (doneWeeks / totalWeeks) : 0;
+      tr.dataset.bonusRatio = String(ratio); // 0~1
+    }
+
+    // —— 请求封装 —— //
+    async function fetchBase(addr) {
       const url = `${PROXY_BASE}?address=${encodeURIComponent(addr)}`;
       const res = await fetch(url, { method: 'GET' });
       const text = await res.text();
       let json;
-      try { json = JSON.parse(text); } catch (e) {
-        throw new Error(`无法解析返回：${text?.slice(0,200) || '空'}`);
-      }
-      if (!res.ok) {
-        const msg = (json && (json.message || json.error)) ? (json.message || json.error) : `HTTP ${res.status}`;
-        throw new Error(msg);
-      }
-      return json;
+      try { json = JSON.parse(text); } catch { throw new Error(`无法解析返回：${text?.slice(0,200) || '空'}`); }
+      if (!res.ok) throw new Error(json?.message || json?.error || `HTTP ${res.status}`);
+      return Array.isArray(json) ? json[0] : json;
+    }
+
+    async function fetchSeason(addr, season) {
+      const url = `${PORTAL_ORIGIN}/api/profile/tx-per-season?address=${encodeURIComponent(addr)}&season=${encodeURIComponent(season)}`;
+      const r = await fetch(url);
+      const t = await r.text();
+      let j; try { j = JSON.parse(t); } catch { throw new Error(`tx-per-season 解析失败：${t?.slice(0,200)}`); }
+      if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
+      return j;
+    }
+
+    async function fetchBonus(addr) {
+      const url = `${PORTAL_ORIGIN}/api/profile/bonus-dapp?address=${encodeURIComponent(addr)}`;
+      const r = await fetch(url);
+      const t = await r.text();
+      let j; try { j = JSON.parse(t); } catch { throw new Error(`bonus-dapp 解析失败：${t?.slice(0,200)}`); }
+      if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
+      return j; // 数组
     }
 
     function updateStats(done, total, okCount) {
-      // Σ totalScore
+      // Σ totalScore（基础接口）
       let sum = 0;
       tbody.querySelectorAll('tr').forEach(tr => {
         const v = parseFloat(tr.dataset.total);
@@ -202,8 +280,9 @@
       ].join(' &nbsp;|&nbsp; ');
     }
 
-    async function runBatch(addresses, concurrency = 6) {
-      statsEl.textContent = `共 ${addresses.length} 个地址，开始查询…`;
+    // —— 并发批量 —— //
+    async function runBatch(addresses, season, concurrency = 6) {
+      statsEl.textContent = `共 ${addresses.length} 个地址，开始查询（赛季 ${season}）…`;
       tbody.innerHTML = '';
       const rows = addresses.map((addr, i) => {
         const tr = rowSkeleton(i, addr);
@@ -219,12 +298,46 @@
         while (cursor < addresses.length) {
           const idx = cursor++;
           const addr = addresses[idx];
+          const tr = rows[idx];
+
+          // 三个接口并行请求
           try {
-            const data = await fetchOne(addr);
-            updateRow(rows[idx], data, null);
-            okCount++;
+            const [baseRes, seasonRes, bonusRes] = await Promise.allSettled([
+              fetchBase(addr),
+              fetchSeason(addr, season),
+              fetchBonus(addr)
+            ]);
+
+            if (baseRes.status === 'fulfilled') {
+              updateRowBase(tr, baseRes.value);
+            } else {
+              updateRowBase(tr, null);
+              tr.querySelectorAll('td')[2].textContent = '错误';
+              tr.querySelectorAll('td')[2].title = baseRes.reason?.message || String(baseRes.reason || '');
+            }
+
+            if (seasonRes.status === 'fulfilled') {
+              updateRowSeason(tr, seasonRes.value);
+            } else {
+              tr.querySelectorAll('td')[5].textContent = '-';
+              tr.querySelectorAll('td')[5].title = seasonRes.reason?.message || String(seasonRes.reason || '');
+            }
+
+            if (bonusRes.status === 'fulfilled') {
+              updateRowBonus(tr, bonusRes.value);
+            } else {
+              tr.querySelectorAll('td')[9].textContent = '-';
+              tr.querySelectorAll('td')[9].title = bonusRes.reason?.message || String(bonusRes.reason || '');
+            }
+
+            // 以“基础接口成功”作为成功计数（可改为三者都成功）
+            if (baseRes.status === 'fulfilled') okCount++;
+
           } catch (err) {
-            updateRow(rows[idx], null, err.message || String(err));
+            // 理论上不会到这（已用 allSettled）；兜底
+            const tds = tr.querySelectorAll('td');
+            tds[2].textContent = '错误';
+            tr.title = err?.message || String(err || '');
           } finally {
             done++;
             updateStats(done, addresses.length, okCount);
@@ -239,11 +352,12 @@
     // —— 排序 —— //
     const ths = document.querySelectorAll('thead th[data-sort]');
     ths.forEach(th => th.classList.add('sortable'));
+    const numericOrDateKeys = new Set(['total','base','liquidity','seasonScore','seasonTx','uniqueDays','streak','bonusRatio','created','updated']);
+
     ths.forEach(th => {
       th.addEventListener('click', () => {
         const key = th.dataset.sort;
         // 数值/时间默认降序；文本（address）与 index 默认升序
-        const numericOrDateKeys = new Set(['total','base','liquidity','created','updated']);
         const defaultAsc = (key === 'address' || key === 'index') ? true : !numericOrDateKeys.has(key);
         if (sortState.key === key) {
           sortState.asc = !sortState.asc;
@@ -275,7 +389,6 @@
         if (aNum && bNum) return (av - bv) * dir;
         if (aNum && !bNum) return -1;
         if (!aNum && bNum) return 1;
-        // 字符串（仅 address）
         const as = String(av || ''), bs = String(bv || '');
         return as.localeCompare(bs) * dir;
       });
@@ -288,7 +401,8 @@
     }
 
     function renderSortIndicators() {
-      ths.forEach(th => {
+      const heads = document.querySelectorAll('thead th[data-sort]');
+      heads.forEach(th => {
         const span = th.querySelector('.arrow');
         if (!span) return;
         if (th.dataset.sort === sortState.key) {
@@ -314,7 +428,8 @@
       startBtn.disabled = true; clearBtn.disabled = true;
       sortState.key = null; renderSortIndicators();
       try {
-        await runBatch(addresses, 6);
+        const season = parseInt(seasonInput.value || '1', 10) || 1;
+        await runBatch(addresses, season, 6);
       } finally {
         startBtn.disabled = false; clearBtn.disabled = false;
       }
