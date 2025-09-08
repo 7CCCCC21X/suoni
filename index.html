@@ -66,7 +66,7 @@
       <span class="inp">赛季 <input id="seasonInput" type="number" value="1" min="0" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
-      <span class="muted">基础查询走代理 <span class="mono">/api/soneium</span>；季活跃与加成任务默认直连 <span class="mono">portal.soneium.org</span></span>
+      <span class="muted">全部接口均走代理 <span class="mono">/api/soneium</span>（已绕过 CORS）</span>
     </div>
 
     <div id="stats" class="stats muted">尚未开始</div>
@@ -94,14 +94,13 @@
     </div>
 
     <div class="footer">
-      数据源：<span class="mono">/api/soneium</span> ，<span class="mono">https://portal.soneium.org/api/profile/tx-per-season</span> ，<span class="mono">/api/profile/bonus-dapp</span>
+      数据源：<span class="mono">/api/soneium</span>（base/tx/bonus 统一代理）
     </div>
   </div>
 
   <script>
     // —— 配置 —— //
-    const PROXY_BASE = '/api/soneium';                 // 你的基础接口代理
-    const PORTAL_ORIGIN = 'https://portal.soneium.org';// 如遇 CORS，可改为你的代理（例如：'/api/portal'）
+    const PROXY_BASE = '/api/soneium';   // 统一代理，所有请求都走它
 
     const startBtn = document.getElementById('startBtn');
     const clearBtn = document.getElementById('clearBtn');
@@ -237,9 +236,9 @@
       tr.dataset.bonusRatio = String(ratio); // 0~1
     }
 
-    // —— 请求封装 —— //
+    // —— 请求封装（统一走 /api/soneium） —— //
     async function fetchBase(addr) {
-      const url = `${PROXY_BASE}?address=${encodeURIComponent(addr)}`;
+      const url = `${PROXY_BASE}?address=${encodeURIComponent(addr)}`; // 默认 type=base
       const res = await fetch(url, { method: 'GET' });
       const text = await res.text();
       let json;
@@ -249,7 +248,7 @@
     }
 
     async function fetchSeason(addr, season) {
-      const url = `${PORTAL_ORIGIN}/api/profile/tx-per-season?address=${encodeURIComponent(addr)}&season=${encodeURIComponent(season)}`;
+      const url = `${PROXY_BASE}?type=tx&address=${encodeURIComponent(addr)}&season=${encodeURIComponent(season)}`;
       const r = await fetch(url);
       const t = await r.text();
       let j; try { j = JSON.parse(t); } catch { throw new Error(`tx-per-season 解析失败：${t?.slice(0,200)}`); }
@@ -258,7 +257,7 @@
     }
 
     async function fetchBonus(addr) {
-      const url = `${PORTAL_ORIGIN}/api/profile/bonus-dapp?address=${encodeURIComponent(addr)}`;
+      const url = `${PROXY_BASE}?type=bonus&address=${encodeURIComponent(addr)}`;
       const r = await fetch(url);
       const t = await r.text();
       let j; try { j = JSON.parse(t); } catch { throw new Error(`bonus-dapp 解析失败：${t?.slice(0,200)}`); }
@@ -300,7 +299,7 @@
           const addr = addresses[idx];
           const tr = rows[idx];
 
-          // 三个接口并行请求
+          // 三个接口并行请求（全部走代理）
           try {
             const [baseRes, seasonRes, bonusRes] = await Promise.allSettled([
               fetchBase(addr),
@@ -330,11 +329,9 @@
               tr.querySelectorAll('td')[9].title = bonusRes.reason?.message || String(bonusRes.reason || '');
             }
 
-            // 以“基础接口成功”作为成功计数（可改为三者都成功）
             if (baseRes.status === 'fulfilled') okCount++;
 
           } catch (err) {
-            // 理论上不会到这（已用 allSettled）；兜底
             const tds = tr.querySelectorAll('td');
             tds[2].textContent = '错误';
             tr.title = err?.message || String(err || '');
