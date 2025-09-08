@@ -12,8 +12,9 @@
  *
  * 注意：
  * - 做了白名单与参数校验，避免任意转发（SSRF）。
- * - 返回上游原始 Content-Type，并设置 Access-Control-Allow-Origin: *。
- * - 如你把本路由部署在 suoni.vercel.app 同域，为避免“自我代理死循环”，代码做了自我转发阻断。
+ * - 透传上游 Content-Type，并设置 Access-Control-Allow-Origin: *。
+ * - 如果本服务部署在 suoni.vercel.app，同域 self-proxy 会被阻止；
+ *   请改用环境变量 BASE_UPSTREAM 指向真正的上游，或把 base 的实现直接收编到该路由。
  */
 
 const CORS_HEADERS = {
@@ -23,11 +24,11 @@ const CORS_HEADERS = {
   'Vary': 'Origin',
 };
 
-// 允许的上游（可按需改成环境变量）
+// 允许的上游（可用环境变量覆盖）
 const UPSTREAMS = {
-  base : 'https://suoni.vercel.app/api/soneium',
-  tx   : 'https://portal.soneium.org/api/profile/tx-per-season',
-  bonus: 'https://portal.soneium.org/api/profile/bonus-dapp',
+  base : process.env.BASE_UPSTREAM  || 'https://suoni.vercel.app/api/soneium',
+  tx   : process.env.TX_UPSTREAM    || 'https://portal.soneium.org/api/profile/tx-per-season',
+  bonus: process.env.BONUS_UPSTREAM || 'https://portal.soneium.org/api/profile/bonus-dapp',
 };
 
 // EVM 地址粗校验
