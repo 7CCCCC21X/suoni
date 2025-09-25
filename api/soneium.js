@@ -1,18 +1,20 @@
 // pages/api/soneium.js
 /**
- * 统一代理 3 个上游接口，并在 calc 模式下支持“只返回指定季/最新季”的聚合展示：
- * 1) calc  : https://portal.soneium.org/api/profile/calculator?address=...
- *            - 默认：仅返回“最新季”的单个对象（不是数组）
- *            - 可选：?season=2 仅返回指定季
- *            - 可选：?raw=1   原样透传上游数组（兼容旧前端）
- * 2) tx    : https://portal.soneium.org/api/profile/tx-per-season?address=...&season=1
- * 3) bonus : https://portal.soneium.org/api/profile/bonus-dapp?address=...
+ * 统一代理 3 个上游接口；并做两点定制：
+ * A) tx：不带 season 时默认使用第 2 季
+ * B) calc（默认路由）：优先返回第 2 季；若上游无 S2 数据则返回数字 0
+ *
+ * 上游：
+ *  - calc  : https://portal.soneium.org/api/profile/calculator?address=...
+ *  - tx    : https://portal.soneium.org/api/profile/tx-per-season?address=...&season=...
+ *  - bonus : https://portal.soneium.org/api/profile/bonus-dapp?address=...
  *
  * 前端调用（全部走本路由）：
- *   /api/soneium?address=0x...                         // 默认 == type=calc，返回“最新季”对象（当前为 S2）
- *   /api/soneium?type=calc&address=0x...&season=2      // 只要第 2 季对象
- *   /api/soneium?type=calc&address=0x...&raw=1         // 原样数组（不做聚合）
- *   /api/soneium?type=tx&address=0x...&season=2        // 上游透传（S2）
+ *   /api/soneium?address=0x...                         // == type=calc，返回 S2；若无 S2 则返回 0（数字）
+ *   /api/soneium?type=calc&address=0x...&season=2      // 强制返回 S2 对象
+ *   /api/soneium?type=calc&address=0x...&raw=1         // 透传上游数组
+ *   /api/soneium?type=tx&address=0x...                 // 默认 season=2
+ *   /api/soneium?type=tx&address=0x...&season=2        // 指定 S2
  *   /api/soneium?type=bonus&address=0x...
  */
 
@@ -30,6 +32,10 @@ const UPSTREAMS = {
   bonus: process.env.BONUS_UPSTREAM || 'https://portal.soneium.org/api/profile/bonus-dapp',
 };
 
+// 默认季（可被环境变量覆盖）
+const DEFAULT_SEASON = Number(process.env.DEFAULT_SEASON || 2);     // calc 用于选择“目标季”
+const DEFAULT_TX_SEASON = Number(process.env.DEFAULT_TX_SEASON || DEFAULT_SEASON); // tx 默认季
+
 // EVM 地址粗校验
 const isAddress = (s) => typeof s === 'string' && /^0x[a-fA-F0-9]{40}$/i.test(s);
 
@@ -40,16 +46,6 @@ function isSelfProxy(target, req) {
     const reqHost = (req.headers['x-forwarded-host'] || req.headers.host || '').toString();
     return thost && reqHost && thost.toLowerCase() === reqHost.toLowerCase();
   } catch { return false; }
-}
-
-// 从数组里挑“最新季”（season 最大）的一条
-function pickLatestSeasonItem(arr) {
-  if (!Array.isArray(arr) || arr.length === 0) return null;
-  return arr.reduce((best, cur) => {
-    const b = Number(best?.season ?? -Infinity);
-    const c = Number(cur?.season ?? -Infinity);
-    return c > b ? cur : best;
-  }, null);
 }
 
 export default async function handler(req, res) {
@@ -71,10 +67,10 @@ export default async function handler(req, res) {
 
   const address = url.searchParams.get('address') || '';
 
-  // season 现在同时支持 calc / tx（calc 用于筛选返回的数组）
-  const seasonParam = url.searchParams.get('season');
-  const hasSeasonParam = seasonParam !== null && seasonParam !== '';
-  const season = hasSeasonParam ? parseInt(seasonParam, 10) : undefined;
+  // season：calc/tx 都接受；calc 用于筛选返回的数组
+  const seasonRaw = url.searchParams.get('season');
+  const hasSeasonParam = seasonRaw !== null && seasonRaw !== '';
+  const season = hasSeasonParam ? parseInt(seasonRaw, 10) : undefined;
 
   // 是否要求透传 calc 的原始数组
   const rawParam = (url.searchParams.get('raw') || '').toLowerCase();
@@ -97,11 +93,13 @@ export default async function handler(req, res) {
   // 组装上游 URL（严格白名单）
   let target = '';
   if (type === 'calc') {
+    // calc：始终请求上游数组；后续本地筛选到 S2 或返回 0
     const qs = new URLSearchParams({ address });
     target = `${UPSTREAMS.calc}?${qs.toString()}`;
   } else if (type === 'tx') {
-    const seasonForTx = season ?? 1; // tx 不传 season 时，仍默认查询 S1（与原版一致）
-    const qs = new URLSearchParams({ address, season: String(seasonForTx) });
+    // tx：默认 season=2（可通过 ?season= 覆盖）
+    const seasonForTx = hasSeasonParam ? String(season) : String(DEFAULT_TX_SEASON);
+    const qs = new URLSearchParams({ address, season: seasonForTx });
     target = `${UPSTREAMS.tx}?${qs.toString()}`;
   } else if (type === 'bonus') {
     const qs = new URLSearchParams({ address });
@@ -117,7 +115,7 @@ export default async function handler(req, res) {
   try {
     const upstream = await fetch(target, {
       method: 'GET',
-      headers: { accept: 'application/json', 'user-agent': 'Soneium-Proxy/1.1' },
+      headers: { accept: 'application/json', 'user-agent': 'Soneium-Proxy/1.2' },
       redirect: 'follow',
     });
 
@@ -133,31 +131,33 @@ export default async function handler(req, res) {
       ...CORS_HEADERS,
     };
 
-    // --- calc 聚合（只返回“最新季”或指定季） ---
+    // --- calc 定制：优先返回 S2；若无 S2 则返回数字 0 ---
     if (type === 'calc' && upstream.ok && !wantRaw) {
       try {
         const data = JSON.parse(bodyText); // 上游返回数组
-        let selected = null;
+        let selected;
+
+        // 选择季：优先 ?season=xxx，否则默认季（2）
+        const seasonToPick = hasSeasonParam ? Number(season) : DEFAULT_SEASON;
 
         if (Array.isArray(data)) {
-          if (hasSeasonParam) {
-            selected = data.find(d => Number(d?.season) === Number(season));
-            // 若没找到指定季，则兜底返回“最新季”
-            if (!selected) selected = pickLatestSeasonItem(data);
-          } else {
-            // 未指定季：默认返回“最新季”
-            selected = pickLatestSeasonItem(data);
-          }
+          selected = data.find(d => Number(d?.season) === seasonToPick);
         }
 
+        responseHeaders['Content-Type'] = 'application/json; charset=utf-8';
+        responseHeaders['X-Calc-Season-Requested'] = String(seasonToPick);
+
         if (selected) {
+          // 命中该季：返回对象
           bodyText = JSON.stringify(selected);
-          responseHeaders['Content-Type'] = 'application/json; charset=utf-8';
-          responseHeaders['X-Calc-Mode'] = hasSeasonParam ? 'season' : 'latest';
-          responseHeaders['X-Calc-Season'] = String(selected.season ?? '');
+          responseHeaders['X-Calc-Match'] = 'hit';
+        } else {
+          // 上游无该季：返回数字 0
+          bodyText = '0';
+          responseHeaders['X-Calc-Match'] = 'miss';
         }
       } catch {
-        // JSON 解析失败就原样透传
+        // JSON 解析失败则原样透传
       }
     }
 
