@@ -77,6 +77,8 @@
   <script>
     // —— 配置 —— //
     const PROXY_BASE = '/api/soneium';   // 统一代理，所有请求都走它
+    // ★ 新增：达标阈值（总分≥80 达标）
+    const PASS_THRESHOLD = 80;
 
     const startBtn = document.getElementById('startBtn');
     const clearBtn = document.getElementById('clearBtn');
@@ -260,7 +262,7 @@
         throw new Error(`calculator 解析失败：${t?.slice(0,200) || '空'}`);
       }
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
-      // 你后端已经把 calc 聚合为“对象或数字0”，这里原样返回
+      // 后端已将 calc 聚合为“对象或数字0”，这里原样返回
       return j;
     }
 
@@ -282,6 +284,20 @@
       return j; // 数组
     }
 
+    // —— 统计：按输入顺序返回达标的“序号”（1 开始） —— //
+    function getPassIndices(threshold = PASS_THRESHOLD) {
+      return Array
+        .from(tbody.querySelectorAll('tr'))
+        // 固定用 dataset.index（输入顺序的 0-based），不受表格排序影响
+        .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))
+        .filter(tr => {
+          const v = parseFloat(tr.dataset.total);
+          return Number.isFinite(v) && v >= threshold;
+        })
+        // 转为 1-based 序号
+        .map(tr => String(Number(tr.dataset.index) + 1));
+    }
+
     function updateStats(done, total, okCount) {
       // Σ totalScore（calculator）
       let sum = 0;
@@ -289,10 +305,16 @@
         const v = parseFloat(tr.dataset.total);
         if (Number.isFinite(v)) sum += v;
       });
+
+      // 达标序号（按输入顺序）
+      const passed = getPassIndices();
+
       statsEl.innerHTML = [
         `进度：${done}/${total}`,
         `成功 ${okCount}`,
-        `总积分 Σ：${fmtNum(sum, 2)}`
+        `总积分 Σ：${fmtNum(sum, 2)}`,
+        // 按你的要求：显示为 “达标5 6 10”（无冒号）
+        `达标${passed.length ? passed.join(' ') : '—'}`
       ].join(' &nbsp;|&nbsp; ');
     }
 
