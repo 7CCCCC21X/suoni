@@ -43,11 +43,10 @@
 0xe0aE1c69420953CFffdB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
-      <!-- 默认赛季改为 3 -->
       <span class="inp">赛季 <input id="seasonInput" type="number" value="3" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
-      <span class="muted">全部接口均走代理 <span class="mono">/api/soneium</span></span>
+      <span class="muted">全部接口均走代理 <span class="mono">/api/soneium</span>（总分=季活跃 score）</span>
     </div>
 
     <div id="stats" class="stats muted">尚未开始</div>
@@ -58,7 +57,7 @@
           <tr>
             <th data-sort="index" style="width:56px;" class="sortable"># <span class="arrow"></span></th>
             <th data-sort="address" style="min-width:360px;" class="sortable">地址 <span class="arrow"></span></th>
-            <th data-sort="total" class="sortable">总分 <span class="arrow"></span></th>
+            <th data-sort="total" class="sortable">总分（以季分为准） <span class="arrow"></span></th>
             <th data-sort="base" class="sortable">基础分 <span class="arrow"></span></th>
             <th data-sort="liquidity" class="sortable">流动性积分（余额分） <span class="arrow"></span></th>
             <th data-sort="seasonScore" class="sortable">季分 <span class="arrow"></span></th>
@@ -74,7 +73,10 @@
       </table>
     </div>
 
-    <div class="footer">数据源：<span class="mono">/api/soneium</span>（calc/tx/bonus 统一代理）</div>
+    <div class="footer">
+      数据源：<span class="mono">/api/soneium</span>（calc/tx/bonus 统一代理）
+      &nbsp;|&nbsp; 说明：<span class="mono">总分</span> 以 <span class="mono">tx-per-season.score</span> 为准，失败时回退 calculator。
+    </div>
   </div>
 
   <script>
@@ -82,7 +84,7 @@
     const PROXY_BASE = '/api/soneium';                 // 统一代理
     const PORTAL_ORIGIN = 'https://portal.soneium.org'; // 仅用于展示跳转链接
 
-    // ✅ 通过“查询参数”方式调用代理（与 pages/api/soneium.js 匹配）
+    // 用“查询参数”方式调用代理（与 pages/api/soneium.js 匹配）
     const API = {
       calculator: (addr, season) => {
         const s = Number.isFinite(season) ? `&season=${encodeURIComponent(season)}` : '';
@@ -92,7 +94,6 @@
         const s = Number.isFinite(season) ? `&season=${encodeURIComponent(season)}` : '';
         return `${PROXY_BASE}?type=tx&address=${encodeURIComponent(addr)}${s}`;
       },
-      // bonus 沿用你原有聚合器
       bonus: (addr) => `${PROXY_BASE}?type=bonus&address=${encodeURIComponent(addr)}`
     };
 
@@ -167,34 +168,30 @@
       return tr;
     }
 
-    // —— 写入：calculator（容错字段名 + 支持返回数字0） —— //
+    // —— 写入：calculator（保留用作补充信息 + 兜底） —— //
     function updateRowBase(tr, item) {
       const tds = tr.querySelectorAll('td');
 
       // 情况 A：后端返回数字（无该季 -> 0）
       if (typeof item === 'number') {
-        tds[2].textContent = fmtNum(item, 0); // 总分=0
-        tds[3].textContent = '-';
-        tds[4].textContent = '-';
+        // 注意：总分以季分为准，这里不覆盖“总分”单元格
+        tds[3].textContent = '-'; // 基础分
+        tds[4].textContent = '-'; // 流动性
         tds[10].textContent = '';
         tds[11].textContent = '';
-        tr.title = String(item);
-        tr.dataset.total = numOrEmpty(item); // "0"
         tr.dataset.base = '';
         tr.dataset.liquidity = '';
         tr.dataset.created = '';
-        tr.dataset.updated = '';
+        // tr.dataset.total 由季分函数决定
         return;
       }
 
       // 情况 B：对象
       if (!item || typeof item !== 'object') {
-        tds[2].textContent = '无返回';
-        return;
+        return; // 不覆盖任何单元格
       }
 
       // 兼容不同字段名
-      const total = item.totalScore ?? item.score ?? item.points;
       const base  = item.baseScore ?? item.base ?? item.basePoints;
       const liq   = item.liquidityContributionPoints
                  ?? item.allTimeLiquidityScore
@@ -209,24 +206,33 @@
         ? new Date(updatedAtRaw).toISOString()
         : updatedAtRaw;
 
-      tds[2].textContent = fmtNum(total, 2);
+      // ★ 不再从 calculator 写入“总分”，仅写基础分/流动性等辅助列
       tds[3].textContent = base != null ? fmtNum(base, 4) : '';
       tds[4].textContent = liq  != null ? fmtNum(liq, 2)  : '';
       tds[10].textContent = fmtDate(createdAt);
-      tds[11].textContent = fmtDate(updatedAt);
+      // 更新时间优先用季分；此处仅在尚未被季分覆盖时展示
+      if (!tr.dataset.updated) tds[11].textContent = fmtDate(updatedAt);
 
       tr.title = (item && typeof item === 'object') ? JSON.stringify(item, null, 2) : String(item);
-      tr.dataset.total = numOrEmpty(total);
       tr.dataset.base = numOrEmpty(base);
       tr.dataset.liquidity = numOrEmpty(liq);
       tr.dataset.created = createdAt ? Date.parse(createdAt) : '';
-      tr.dataset.updated = updatedAt ? Date.parse(updatedAt) : '';
+      // tr.dataset.total 由季分函数决定
     }
 
     // —— 写入：季活跃（tx-per-season） —— //
     function updateRowSeason(tr, item) {
       const tds = tr.querySelectorAll('td');
       if (!item || typeof item !== 'object') return;
+
+      // ★ 关键：以季分 score 作为“总分”
+      const seasonScore = Number(item.score);
+      if (Number.isFinite(seasonScore)) {
+        tds[2].textContent = fmtNum(seasonScore, 2);      // 覆盖“总分”
+        tr.dataset.total = String(seasonScore);           // 统计/达标用
+      }
+
+      // 季度细分列
       tds[5].textContent = fmtNum(item.score, 2);
       tds[6].textContent = fmtNum(item.totalTransactions, 0);
       tds[7].textContent = fmtNum(item.uniqueDays, 0);
@@ -236,6 +242,15 @@
       tr.dataset.seasonTx    = numOrEmpty(item.totalTransactions);
       tr.dataset.uniqueDays  = numOrEmpty(item.uniqueDays);
       tr.dataset.streak      = numOrEmpty(item.streak);
+
+      // 优化：更新时间使用季分的 scoreLastUpdated
+      if (item.scoreLastUpdated != null) {
+        tds[11].textContent = fmtDate(item.scoreLastUpdated);
+        const ts = (typeof item.scoreLastUpdated === 'number')
+          ? item.scoreLastUpdated
+          : Date.parse(item.scoreLastUpdated);
+        tr.dataset.updated = Number.isFinite(ts) ? String(ts) : '';
+      }
     }
 
     // —— 写入：加成任务（bonus-dapp） —— //
@@ -274,12 +289,12 @@
 
     // —— 请求封装（全部走 /api/soneium 代理） —— //
     async function fetchBase(addr, season) {
-      const url = API.calculator(addr, season); // ✅ 改为查询参数样式
+      const url = API.calculator(addr, season);
       const r = await fetch(url);
       const t = await r.text();
       let j;
       try { j = JSON.parse(t); } catch {
-        if (t.trim() === '0') return 0; // 少数后端可能直接返回数字 0
+        if (t.trim() === '0') return 0; // 上游可能直接返回数字 0
         throw new Error(`calculator 解析失败：${t?.slice(0,200) || '空'}`);
       }
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
@@ -287,7 +302,7 @@
     }
 
     async function fetchSeason(addr, season) {
-      const url = API.txPerSeason(addr, season); // ✅ 改为查询参数样式
+      const url = API.txPerSeason(addr, season);
       const r = await fetch(url);
       const t = await r.text();
       let j;
@@ -297,7 +312,7 @@
     }
 
     async function fetchBonus(addr) {
-      const url = API.bonus(addr); // ✅ 不变
+      const url = API.bonus(addr);
       const r = await fetch(url);
       const t = await r.text();
       let j; try { j = JSON.parse(t); } catch { throw new Error(`bonus-dapp 解析失败：${t?.slice(0,200)}`); }
@@ -362,16 +377,20 @@
             if (baseRes.status === 'fulfilled') {
               updateRowBase(tr, baseRes.value);
             } else {
-              updateRowBase(tr, null);
-              tr.querySelectorAll('td')[2].textContent = '错误';
-              tr.querySelectorAll('td')[2].title = baseRes.reason?.message || String(baseRes.reason || '');
+              // 仅提示，不影响总分（由季分决定）
+              tr.querySelectorAll('td')[3].textContent = '-';
+              tr.querySelectorAll('td')[4].textContent = '-';
             }
 
             if (seasonRes.status === 'fulfilled') {
               updateRowSeason(tr, seasonRes.value);
             } else {
-              tr.querySelectorAll('td')[5].textContent = '-';
-              tr.querySelectorAll('td')[5].title = seasonRes.reason?.message || String(seasonRes.reason || '');
+              // 季分失败：保留之前（若有）的 calculator 结果作为兜底
+              const cell = tr.querySelectorAll('td')[2];
+              if (!tr.dataset.total) {
+                cell.textContent = '错误';
+              }
+              cell.title = seasonRes.reason?.message || String(seasonRes.reason || '');
             }
 
             if (bonusRes.status === 'fulfilled') {
@@ -381,7 +400,8 @@
               tr.querySelectorAll('td')[9].title = bonusRes.reason?.message || String(bonusRes.reason || '');
             }
 
-            if (baseRes.status === 'fulfilled') okCount++;
+            // 只统计“季分 OK”的条目为成功
+            if (seasonRes.status === 'fulfilled') okCount++;
 
           } catch (err) {
             const tds = tr.querySelectorAll('td');
