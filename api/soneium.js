@@ -1,8 +1,8 @@
 // pages/api/soneium.js
 /**
  * 统一代理 3 个上游接口；并做两点定制：
- * A) tx：不带 season 时默认使用第 2 季
- * B) calc（默认路由）：优先返回第 2 季；若上游无 S2 数据则返回数字 0
+ * A) tx：不带 season 时默认使用第 3 季
+ * B) calc（默认路由）：优先返回第 3 季；若上游无 S3 数据则返回数字 0
  *
  * 上游：
  *  - calc  : https://portal.soneium.org/api/profile/calculator?address=...
@@ -10,11 +10,11 @@
  *  - bonus : https://portal.soneium.org/api/profile/bonus-dapp?address=...
  *
  * 前端调用（全部走本路由）：
- *   /api/soneium?address=0x...                         // == type=calc，返回 S2；若无 S2 则返回 0（数字）
- *   /api/soneium?type=calc&address=0x...&season=2      // 强制返回 S2 对象
- *   /api/soneium?type=calc&address=0x...&raw=1         // 透传上游数组
- *   /api/soneium?type=tx&address=0x...                 // 默认 season=2
- *   /api/soneium?type=tx&address=0x...&season=2        // 指定 S2
+ *   /api/soneium?address=0x...                         // == type=calc，返回 S3；若无 S3 则返回 0（数字）
+ *   /api/soneium?type=calc&address=0x...&season=3      // 强制返回 S3 对象
+ *   /api/soneium?type=calc&address=0x...&raw=1         // 透传上游原始返回（不做筛选/改写）
+ *   /api/soneium?type=tx&address=0x...                 // 默认 season=3
+ *   /api/soneium?type=tx&address=0x...&season=3        // 指定 S3
  *   /api/soneium?type=bonus&address=0x...
  */
 
@@ -33,7 +33,8 @@ const UPSTREAMS = {
 };
 
 // 默认季（可被环境变量覆盖）
-const DEFAULT_SEASON = Number(process.env.DEFAULT_SEASON || 2);     // calc 用于选择“目标季”
+// ★ 已切换到 S3
+const DEFAULT_SEASON = Number(process.env.DEFAULT_SEASON || 3);                 // calc 用于选择“目标季”
 const DEFAULT_TX_SEASON = Number(process.env.DEFAULT_TX_SEASON || DEFAULT_SEASON); // tx 默认季
 
 // EVM 地址粗校验
@@ -46,6 +47,39 @@ function isSelfProxy(target, req) {
     const reqHost = (req.headers['x-forwarded-host'] || req.headers.host || '').toString();
     return thost && reqHost && thost.toLowerCase() === reqHost.toLowerCase();
   } catch { return false; }
+}
+
+// —— 尝试在各种常见结构中选出指定赛季 —— //
+// 上游 calculator 可能返回：
+//  1) 纯数组：[{season:3,...},{season:2,...}, ...]
+//  2) 对象 + 数组：{ seasons:[{season:3,...}, ...] } 或 { data:[{season:3,...}, ...] }
+//  3) 单对象：{ season:3, ... }（若命中所需季，可直接返回）
+function pickSeasonPayload(data, seasonToPick) {
+  if (!data) return undefined;
+
+  // 情况 3：单对象且 season 匹配
+  if (typeof data === 'object' && !Array.isArray(data) && Number(data.season) === Number(seasonToPick)) {
+    return data;
+  }
+
+  // 情况 1：纯数组
+  if (Array.isArray(data)) {
+    return data.find(d => Number(d?.season) === Number(seasonToPick));
+  }
+
+  // 情况 2：对象包装的数组
+  if (typeof data === 'object' && data) {
+    const arrLike = Array.isArray(data.seasons) ? data.seasons
+                  : Array.isArray(data.data)    ? data.data
+                  : Array.isArray(data.items)   ? data.items
+                  : undefined;
+    if (arrLike) {
+      return arrLike.find(d => Number(d?.season) === Number(seasonToPick));
+    }
+  }
+
+  // 未找到
+  return undefined;
 }
 
 export default async function handler(req, res) {
@@ -67,12 +101,12 @@ export default async function handler(req, res) {
 
   const address = url.searchParams.get('address') || '';
 
-  // season：calc/tx 都接受；calc 用于筛选返回的数组
+  // season：calc/tx 都接受；calc 用于从上游返回中选定对应赛季
   const seasonRaw = url.searchParams.get('season');
   const hasSeasonParam = seasonRaw !== null && seasonRaw !== '';
   const season = hasSeasonParam ? parseInt(seasonRaw, 10) : undefined;
 
-  // 是否要求透传 calc 的原始数组
+  // 是否要求透传 calc 的原始返回
   const rawParam = (url.searchParams.get('raw') || '').toLowerCase();
   const wantRaw = rawParam === '1' || rawParam === 'true';
 
@@ -93,11 +127,11 @@ export default async function handler(req, res) {
   // 组装上游 URL（严格白名单）
   let target = '';
   if (type === 'calc') {
-    // calc：始终请求上游数组；后续本地筛选到 S2 或返回 0
+    // calc：始终请求上游的完整数据（不携带 season），在本地筛选到 S3 或返回 0
     const qs = new URLSearchParams({ address });
     target = `${UPSTREAMS.calc}?${qs.toString()}`;
   } else if (type === 'tx') {
-    // tx：默认 season=2（可通过 ?season= 覆盖）
+    // tx：默认 season=3（可通过 ?season= 覆盖）
     const seasonForTx = hasSeasonParam ? String(season) : String(DEFAULT_TX_SEASON);
     const qs = new URLSearchParams({ address, season: seasonForTx });
     target = `${UPSTREAMS.tx}?${qs.toString()}`;
@@ -115,7 +149,7 @@ export default async function handler(req, res) {
   try {
     const upstream = await fetch(target, {
       method: 'GET',
-      headers: { accept: 'application/json', 'user-agent': 'Soneium-Proxy/1.2' },
+      headers: { accept: 'application/json', 'user-agent': 'Soneium-Proxy/1.3' },
       redirect: 'follow',
     });
 
@@ -128,21 +162,16 @@ export default async function handler(req, res) {
       'Content-Type': upstreamCT,
       'Cache-Control': 's-maxage=60, stale-while-revalidate=300', // CDN 60s，可按需调整
       'X-Proxy-Target': target,
+      'X-Season-Default': String(DEFAULT_SEASON),
       ...CORS_HEADERS,
     };
 
-    // --- calc 定制：优先返回 S2；若无 S2 则返回数字 0 ---
+    // --- calc 定制：优先返回 S3；若无 S3 则返回数字 0（除非显式 raw=1 要求透传） ---
     if (type === 'calc' && upstream.ok && !wantRaw) {
       try {
-        const data = JSON.parse(bodyText); // 上游返回数组
-        let selected;
-
-        // 选择季：优先 ?season=xxx，否则默认季（2）
+        const data = JSON.parse(bodyText); // 上游常为数组，亦可能为对象
         const seasonToPick = hasSeasonParam ? Number(season) : DEFAULT_SEASON;
-
-        if (Array.isArray(data)) {
-          selected = data.find(d => Number(d?.season) === seasonToPick);
-        }
+        const selected = pickSeasonPayload(data, seasonToPick);
 
         responseHeaders['Content-Type'] = 'application/json; charset=utf-8';
         responseHeaders['X-Calc-Season-Requested'] = String(seasonToPick);
