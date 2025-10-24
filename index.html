@@ -43,7 +43,7 @@
 0xe0aE1c69420953CFffdB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
-      <!-- ★ 变更：默认赛季改为 3 -->
+      <!-- 默认赛季改为 3 -->
       <span class="inp">赛季 <input id="seasonInput" type="number" value="3" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
@@ -79,17 +79,24 @@
 
   <script>
     // —— 配置 —— //
-    const PROXY_BASE = '/api/soneium';                // 统一代理
+    const PROXY_BASE = '/api/soneium';                 // 统一代理
     const PORTAL_ORIGIN = 'https://portal.soneium.org'; // 仅用于展示跳转链接
-    // ★ 变更：明确新接口在代理里的相对路径
+
+    // ✅ 通过“查询参数”方式调用代理（与 pages/api/soneium.js 匹配）
     const API = {
-      calculator: PROXY_BASE + '/api/profile/calculator',
-      txPerSeason: PROXY_BASE + '/api/profile/tx-per-season',
-      // bonus 沿用你原有聚合器（保持不变）
+      calculator: (addr, season) => {
+        const s = Number.isFinite(season) ? `&season=${encodeURIComponent(season)}` : '';
+        return `${PROXY_BASE}?type=calc&address=${encodeURIComponent(addr)}${s}`;
+      },
+      txPerSeason: (addr, season) => {
+        const s = Number.isFinite(season) ? `&season=${encodeURIComponent(season)}` : '';
+        return `${PROXY_BASE}?type=tx&address=${encodeURIComponent(addr)}${s}`;
+      },
+      // bonus 沿用你原有聚合器
       bonus: (addr) => `${PROXY_BASE}?type=bonus&address=${encodeURIComponent(addr)}`
     };
 
-    // ★ 保持：达标阈值（总分≥80 达标）
+    // 达标阈值（总分≥80 达标）
     const PASS_THRESHOLD = 80;
 
     const startBtn = document.getElementById('startBtn');
@@ -115,14 +122,10 @@
     }
     function fmtDate(s) {
       if (!s && s !== 0) return '';
-      // 支持毫秒时间戳（数字）或 ISO 字符串
-      const d = (typeof s === 'number')
-        ? new Date(s)
-        : new Date(s);
+      const d = (typeof s === 'number') ? new Date(s) : new Date(s);
       if (isNaN(d)) return String(s);
       return d.toLocaleString();
     }
-    const toMs = (x) => x ? Date.parse(x) : '';
     const numOrEmpty = (x) => {
       const v = Number(x);
       return Number.isFinite(v) ? String(v) : '';
@@ -271,11 +274,10 @@
 
     // —— 请求封装（全部走 /api/soneium 代理） —— //
     async function fetchBase(addr, season) {
-      // ★ 变更：新 calculator 接口；可带 season，若服务端忽略也不影响
-      const url = `${API.calculator}?address=${encodeURIComponent(addr)}&season=${encodeURIComponent(season)}`;
+      const url = API.calculator(addr, season); // ✅ 改为查询参数样式
       const r = await fetch(url);
       const t = await r.text();
-      let j; 
+      let j;
       try { j = JSON.parse(t); } catch {
         if (t.trim() === '0') return 0; // 少数后端可能直接返回数字 0
         throw new Error(`calculator 解析失败：${t?.slice(0,200) || '空'}`);
@@ -285,19 +287,17 @@
     }
 
     async function fetchSeason(addr, season) {
-      // ★ 变更：新 tx-per-season 接口
-      const url = `${API.txPerSeason}?address=${encodeURIComponent(addr)}&season=${encodeURIComponent(season)}`;
+      const url = API.txPerSeason(addr, season); // ✅ 改为查询参数样式
       const r = await fetch(url);
       const t = await r.text();
-      let j; 
+      let j;
       try { j = JSON.parse(t); } catch { throw new Error(`tx-per-season 解析失败：${t?.slice(0,200)}`); }
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
       return j;
     }
 
     async function fetchBonus(addr) {
-      // ★ 保持：bonus 仍用你原有的聚合路由
-      const url = API.bonus(addr);
+      const url = API.bonus(addr); // ✅ 不变
       const r = await fetch(url);
       const t = await r.text();
       let j; try { j = JSON.parse(t); } catch { throw new Error(`bonus-dapp 解析失败：${t?.slice(0,200)}`); }
@@ -475,7 +475,7 @@
       startBtn.disabled = true; clearBtn.disabled = true;
       sortState.key = null; renderSortIndicators();
       try {
-        const season = parseInt(seasonInput.value || '3', 10) || 3; // ★ 默认 3
+        const season = parseInt(seasonInput.value || '3', 10) || 3; // 默认 3
         await runBatch(addresses, season, 6);
       } finally {
         startBtn.disabled = false; clearBtn.disabled = false;
