@@ -30,6 +30,9 @@
     .footer { color: var(--muted); font-size: 12px; text-align: right; margin-top: 8px; }
     a.addr { text-decoration: none; border-bottom: 1px dashed #cbd5e1; }
     a.addr:hover { border-bottom-color:#111827; }
+
+    /* ★ 达标高亮（行） */
+    tr.pass td { background: #f0fdf4; }
   </style>
 </head>
 <body>
@@ -81,8 +84,8 @@
 
   <script>
     // —— 配置 —— //
-    const PROXY_BASE = '/api/soneium';                 // 统一代理
-    const PORTAL_ORIGIN = 'https://portal.soneium.org'; // 仅用于展示跳转链接
+    const PROXY_BASE = '/api/soneium';                  // 统一代理
+    const PORTAL_ORIGIN = 'https://debank.com'; // 仅用于展示跳转链接
 
     // 用“查询参数”方式调用代理（与 pages/api/soneium.js 匹配）
     const API = {
@@ -97,8 +100,16 @@
       bonus: (addr) => `${PROXY_BASE}?type=bonus&address=${encodeURIComponent(addr)}`
     };
 
-    // 达标阈值（总分≥80 达标）
-    const PASS_THRESHOLD = 80;
+    /* ★ 达标阈值（按季设置；官方 Season 03 仍为 ≥80 分）
+       如后续赛季调整，只需修改映射。 */
+    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80 };
+    let currentSeason = 3; // 会在点击“开始查询”时同步为输入框的值
+    const getPassThreshold = (season = currentSeason) => {
+      const s = Number(season);
+      return Number.isFinite(s) && PASS_THRESHOLD_BY_SEASON[s] != null
+        ? PASS_THRESHOLD_BY_SEASON[s]
+        : 80; // 安全回退
+    };
 
     const startBtn = document.getElementById('startBtn');
     const clearBtn = document.getElementById('clearBtn');
@@ -149,7 +160,7 @@
       tr.dataset.created = '';
       tr.dataset.updated = '';
 
-      const profileHref = `${PORTAL_ORIGIN}/en/profile/${addr}`;
+      const profileHref = `${PORTAL_ORIGIN}/profile/${addr}`;
 
       tr.innerHTML = `
         <td class="mono">${i+1}</td>
@@ -174,7 +185,6 @@
 
       // 情况 A：后端返回数字（无该季 -> 0）
       if (typeof item === 'number') {
-        // 注意：总分以季分为准，这里不覆盖“总分”单元格
         tds[3].textContent = '-'; // 基础分
         tds[4].textContent = '-'; // 流动性
         tds[10].textContent = '';
@@ -182,7 +192,6 @@
         tr.dataset.base = '';
         tr.dataset.liquidity = '';
         tr.dataset.created = '';
-        // tr.dataset.total 由季分函数决定
         return;
       }
 
@@ -198,7 +207,7 @@
                  ?? item.tvl?.allTimeLiquidityScore
                  ?? item.tvl?.scoreContributionUsd;
 
-      // 时间容错（支持毫秒时间戳或 ISO 字符串）
+      // 时间容错
       const createdAt = item.createdAt
                      ?? (item.scoreCreatedAt ? new Date(item.scoreCreatedAt).toISOString() : undefined);
       const updatedAtRaw = item.updatedAt ?? item.scoreLastUpdated;
@@ -206,18 +215,15 @@
         ? new Date(updatedAtRaw).toISOString()
         : updatedAtRaw;
 
-      // ★ 不再从 calculator 写入“总分”，仅写基础分/流动性等辅助列
       tds[3].textContent = base != null ? fmtNum(base, 4) : '';
       tds[4].textContent = liq  != null ? fmtNum(liq, 2)  : '';
       tds[10].textContent = fmtDate(createdAt);
-      // 更新时间优先用季分；此处仅在尚未被季分覆盖时展示
       if (!tr.dataset.updated) tds[11].textContent = fmtDate(updatedAt);
 
       tr.title = (item && typeof item === 'object') ? JSON.stringify(item, null, 2) : String(item);
       tr.dataset.base = numOrEmpty(base);
       tr.dataset.liquidity = numOrEmpty(liq);
       tr.dataset.created = createdAt ? Date.parse(createdAt) : '';
-      // tr.dataset.total 由季分函数决定
     }
 
     // —— 写入：季活跃（tx-per-season） —— //
@@ -225,14 +231,13 @@
       const tds = tr.querySelectorAll('td');
       if (!item || typeof item !== 'object') return;
 
-      // ★ 关键：以季分 score 作为“总分”
+      // 以季分 score 作为“总分”
       const seasonScore = Number(item.score);
       if (Number.isFinite(seasonScore)) {
-        tds[2].textContent = fmtNum(seasonScore, 2);      // 覆盖“总分”
-        tr.dataset.total = String(seasonScore);           // 统计/达标用
+        tds[2].textContent = fmtNum(seasonScore, 2);
+        tr.dataset.total = String(seasonScore);
       }
 
-      // 季度细分列
       tds[5].textContent = fmtNum(item.score, 2);
       tds[6].textContent = fmtNum(item.totalTransactions, 0);
       tds[7].textContent = fmtNum(item.uniqueDays, 0);
@@ -243,7 +248,6 @@
       tr.dataset.uniqueDays  = numOrEmpty(item.uniqueDays);
       tr.dataset.streak      = numOrEmpty(item.streak);
 
-      // 优化：更新时间使用季分的 scoreLastUpdated
       if (item.scoreLastUpdated != null) {
         tds[11].textContent = fmtDate(item.scoreLastUpdated);
         const ts = (typeof item.scoreLastUpdated === 'number')
@@ -294,7 +298,7 @@
       const t = await r.text();
       let j;
       try { j = JSON.parse(t); } catch {
-        if (t.trim() === '0') return 0; // 上游可能直接返回数字 0
+        if (t.trim() === '0') return 0;
         throw new Error(`calculator 解析失败：${t?.slice(0,200) || '空'}`);
       }
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
@@ -317,11 +321,11 @@
       const t = await r.text();
       let j; try { j = JSON.parse(t); } catch { throw new Error(`bonus-dapp 解析失败：${t?.slice(0,200)}`); }
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
-      return j; // 数组
+      return j;
     }
 
-    // —— 统计：按输入顺序返回达标的“序号”（1 开始） —— //
-    function getPassIndices(threshold = PASS_THRESHOLD) {
+    // —— 统计：按输入顺序返回达标“序号”（1 开始） —— //
+    function getPassIndices(threshold = getPassThreshold()) { // ★ 动态阈值
       return Array
         .from(tbody.querySelectorAll('tr'))
         .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))
@@ -338,18 +342,28 @@
         const v = parseFloat(tr.dataset.total);
         if (Number.isFinite(v)) sum += v;
       });
-      const passed = getPassIndices();
+      const threshold = getPassThreshold();          // ★
+      const passed = getPassIndices(threshold);      // ★
       statsEl.innerHTML = [
         `进度：${done}/${total}`,
         `成功 ${okCount}`,
         `总积分 Σ：${fmtNum(sum, 2)}`,
+        `阈值 ≥${threshold}`,                       // ★ 展示阈值
         `达标${passed.length ? passed.join(' ') : '—'}`
       ].join(' &nbsp;|&nbsp; ');
     }
 
+    // ★ 根据阈值给行加/去“pass”高亮
+    function applyPassClass(tr) {
+      const threshold = getPassThreshold();
+      const v = parseFloat(tr.dataset.total);
+      const ok = Number.isFinite(v) && v >= threshold;
+      tr.classList.toggle('pass', ok);
+    }
+
     // —— 并发批量 —— //
     async function runBatch(addresses, season, concurrency = 6) {
-      statsEl.textContent = `共 ${addresses.length} 个地址，开始查询（赛季 ${season}）…`;
+      statsEl.textContent = `共 ${addresses.length} 个地址，开始查询（赛季 ${season}，阈值 ≥${getPassThreshold(season)}）…`; // ★
       tbody.innerHTML = '';
       const rows = addresses.map((addr, i) => {
         const tr = rowSkeleton(i, addr);
@@ -377,7 +391,6 @@
             if (baseRes.status === 'fulfilled') {
               updateRowBase(tr, baseRes.value);
             } else {
-              // 仅提示，不影响总分（由季分决定）
               tr.querySelectorAll('td')[3].textContent = '-';
               tr.querySelectorAll('td')[4].textContent = '-';
             }
@@ -385,7 +398,6 @@
             if (seasonRes.status === 'fulfilled') {
               updateRowSeason(tr, seasonRes.value);
             } else {
-              // 季分失败：保留之前（若有）的 calculator 结果作为兜底
               const cell = tr.querySelectorAll('td')[2];
               if (!tr.dataset.total) {
                 cell.textContent = '错误';
@@ -400,7 +412,6 @@
               tr.querySelectorAll('td')[9].title = bonusRes.reason?.message || String(bonusRes.reason || '');
             }
 
-            // 只统计“季分 OK”的条目为成功
             if (seasonRes.status === 'fulfilled') okCount++;
 
           } catch (err) {
@@ -408,6 +419,7 @@
             tds[2].textContent = '错误';
             tr.title = err?.message || String(err || '');
           } finally {
+            applyPassClass(tr); // ★ 根据阈值标记行
             done++;
             updateStats(done, addresses.length, okCount);
           }
@@ -496,6 +508,7 @@
       sortState.key = null; renderSortIndicators();
       try {
         const season = parseInt(seasonInput.value || '3', 10) || 3; // 默认 3
+        currentSeason = season;                                     // ★ 同步当前赛季
         await runBatch(addresses, season, 6);
       } finally {
         startBtn.disabled = false; clearBtn.disabled = false;
