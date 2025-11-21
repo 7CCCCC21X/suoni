@@ -46,7 +46,7 @@
 0xe0aE1c69420953CFffdB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
-      <span class="inp">赛季 <input id="seasonInput" type="number" value="3" min="1" step="1"></span>
+      <span class="inp">赛季 <input id="seasonInput" type="number" value="4" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
       <span class="muted">全部接口均走代理 <span class="mono">/api/soneium</span>（总分=季活跃 score）</span>
@@ -100,10 +100,9 @@
       bonus: (addr) => `${PROXY_BASE}?type=bonus&address=${encodeURIComponent(addr)}`
     };
 
-    /* ★ 达标阈值（按季设置；官方 Season 03 仍为 ≥80 分）
-       如后续赛季调整，只需修改映射。 */
-    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80 };
-    let currentSeason = 3; // 会在点击“开始查询”时同步为输入框的值
+    /* ★ 达标阈值（按季设置；官方 S04 如有调整，仅需改此处映射） */
+    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 80 };
+    let currentSeason = 4; // 点击“开始查询”时会同步为输入框值
     const getPassThreshold = (season = currentSeason) => {
       const s = Number(season);
       return Number.isFinite(s) && PASS_THRESHOLD_BY_SEASON[s] != null
@@ -507,7 +506,7 @@
       startBtn.disabled = true; clearBtn.disabled = true;
       sortState.key = null; renderSortIndicators();
       try {
-        const season = parseInt(seasonInput.value || '3', 10) || 3; // 默认 3
+        const season = parseInt(seasonInput.value || '4', 10) || 4; // 默认 4
         currentSeason = season;                                     // ★ 同步当前赛季
         await runBatch(addresses, season, 6);
       } finally {
