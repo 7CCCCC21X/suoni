@@ -49,6 +49,13 @@
       <span class="inp">赛季 <input id="seasonInput" type="number" value="4" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
+
+      <!-- ★ 新增：只显示当季任务开关 -->
+      <label class="muted" style="display:inline-flex;align-items:center;gap:4px;">
+        <input id="bonusSeasonToggle" type="checkbox" checked>
+        只显示当季任务
+      </label>
+
       <span class="muted">全部接口均走代理 <span class="mono">/api/soneium</span>（总分=季活跃 score）</span>
     </div>
 
@@ -116,6 +123,10 @@
     const seasonInput = document.getElementById('seasonInput');
     const tbody = document.getElementById('tbody');
     const statsEl = document.getElementById('stats');
+
+    // ★ bonus 只显示当季任务开关
+    const bonusSeasonToggle = document.getElementById('bonusSeasonToggle');
+    let bonusOnlyCurrentSeason = bonusSeasonToggle ? bonusSeasonToggle.checked : false;
 
     const sortState = { key: null, asc: true };
 
@@ -261,11 +272,19 @@
       const tds = tr.querySelectorAll('td');
       if (!Array.isArray(list)) return;
 
-      const totalWeeks = list.length;
+      // ★ 是否只看当前赛季的任务（season 字段 == currentSeason）
+      const onlyCurrent = bonusOnlyCurrentSeason;
+      const seasonNow = Number(currentSeason);
+
+      const filtered = (onlyCurrent && Number.isFinite(seasonNow))
+        ? list.filter(w => Number(w.season) === seasonNow)
+        : list.slice(); // 不过滤时复制一份
+
+      const totalWeeks = filtered.length;
       let doneWeeks = 0;
       const lines = [];
 
-      for (const w of list) {
+      for (const w of filtered) {
         const weekId = `W${w.week}-${w.id}`;
         const parts = [];
         let weekDone = true;
@@ -284,7 +303,16 @@
 
       const ratioText = totalWeeks ? `${doneWeeks}/${totalWeeks}` : '-';
       tds[9].textContent = ratioText;
-      tds[9].title = lines.length ? lines.join('\n\n') : '—';
+
+      let tip = lines.length ? lines.join('\n\n') : '—';
+
+      // ★ 如果隐藏了其它赛季任务，在 tooltip 里加一句说明
+      if (onlyCurrent && filtered.length !== list.length) {
+        const hiddenCount = list.length - filtered.length;
+        tip += `\n\n（已隐藏其它赛季任务 ${hiddenCount} 个）`;
+      }
+
+      tds[9].title = tip;
 
       const ratio = (totalWeeks > 0) ? (doneWeeks / totalWeeks) : 0;
       tr.dataset.bonusRatio = String(ratio);
@@ -405,6 +433,8 @@
             }
 
             if (bonusRes.status === 'fulfilled') {
+              // ★ 保存原始 bonus 数据，方便切换「只显示当季任务」时重算
+              tr.dataset.bonusRaw = JSON.stringify(bonusRes.value);
               updateRowBonus(tr, bonusRes.value);
             } else {
               tr.querySelectorAll('td')[9].textContent = '-';
@@ -492,6 +522,26 @@
     }
 
     // —— 事件 —— //
+
+    // ★ 只显示当季任务：切换时重新计算每一行的 bonus 显示
+    if (bonusSeasonToggle) {
+      bonusSeasonToggle.addEventListener('change', () => {
+        bonusOnlyCurrentSeason = bonusSeasonToggle.checked;
+
+        // 遍历所有行，用保存的 bonusRaw 重新渲染
+        tbody.querySelectorAll('tr').forEach(tr => {
+          const raw = tr.dataset.bonusRaw;
+          if (!raw) return;
+          try {
+            const list = JSON.parse(raw);
+            updateRowBonus(tr, list);
+          } catch (e) {
+            console.error('解析 bonusRaw 失败', e);
+          }
+        });
+      });
+    }
+
     startBtn.addEventListener('click', async () => {
       const list = parseAddresses(addrInput.value);
       const addresses = list.filter(isAddress);
