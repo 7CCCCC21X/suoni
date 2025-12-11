@@ -108,13 +108,13 @@
     };
 
     /* ★ 达标阈值（按季设置；官方 S04 如有调整，仅需改此处映射） */
-    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 80 };
+    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81 };
     let currentSeason = 4; // 点击“开始查询”时会同步为输入框值
     const getPassThreshold = (season = currentSeason) => {
       const s = Number(season);
       return Number.isFinite(s) && PASS_THRESHOLD_BY_SEASON[s] != null
         ? PASS_THRESHOLD_BY_SEASON[s]
-        : 80; // 安全回退
+        : 81; // 安全回退
     };
 
     const startBtn = document.getElementById('startBtn');
