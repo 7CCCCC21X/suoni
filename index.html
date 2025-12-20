@@ -46,11 +46,11 @@
 0xe0aE1c69420953CFffdB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
-      <span class="inp">赛季 <input id="seasonInput" type="number" value="4" min="1" step="1"></span>
+      <span class="inp">赛季 <input id="seasonInput" type="number" value="5" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
 
-      <!-- ★ 新增：只显示当季任务开关 -->
+      <!-- ★ 只显示当季任务开关 -->
       <label class="muted" style="display:inline-flex;align-items:center;gap:4px;">
         <input id="bonusSeasonToggle" type="checkbox" checked>
         只显示当季任务
@@ -92,7 +92,7 @@
   <script>
     // —— 配置 —— //
     const PROXY_BASE = '/api/soneium';                  // 统一代理
-    const PORTAL_ORIGIN = 'https://debank.com'; // 仅用于展示跳转链接
+    const PORTAL_ORIGIN = 'https://debank.com';         // 仅用于展示跳转链接
 
     // 用“查询参数”方式调用代理（与 pages/api/soneium.js 匹配）
     const API = {
@@ -107,14 +107,14 @@
       bonus: (addr) => `${PROXY_BASE}?type=bonus&address=${encodeURIComponent(addr)}`
     };
 
-    /* ★ 达标阈值（按季设置；官方 S04 如有调整，仅需改此处映射） */
-    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81 };
-    let currentSeason = 4; // 点击“开始查询”时会同步为输入框值
+    /* ★ 达标阈值（按季设置；官方如有调整，只改这里） */
+    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81 };
+    let currentSeason = 5; // 点击“开始查询”时会同步为输入框值
     const getPassThreshold = (season = currentSeason) => {
       const s = Number(season);
       return Number.isFinite(s) && PASS_THRESHOLD_BY_SEASON[s] != null
         ? PASS_THRESHOLD_BY_SEASON[s]
-        : 81; // 安全回退
+        : 81; // 安全回退（如你已知 S5 阈值不同，可改这里或上面的映射）
     };
 
     const startBtn = document.getElementById('startBtn');
@@ -193,7 +193,7 @@
     function updateRowBase(tr, item) {
       const tds = tr.querySelectorAll('td');
 
-      // 情况 A：后端返回数字（无该季 -> 0）
+      // 情况 A：后端返回数字（该季无数据 -> 0）
       if (typeof item === 'number') {
         tds[3].textContent = '-'; // 基础分
         tds[4].textContent = '-'; // 流动性
@@ -352,7 +352,7 @@
     }
 
     // —— 统计：按输入顺序返回达标“序号”（1 开始） —— //
-    function getPassIndices(threshold = getPassThreshold()) { // ★ 动态阈值
+    function getPassIndices(threshold = getPassThreshold()) {
       return Array
         .from(tbody.querySelectorAll('tr'))
         .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))
@@ -369,13 +369,13 @@
         const v = parseFloat(tr.dataset.total);
         if (Number.isFinite(v)) sum += v;
       });
-      const threshold = getPassThreshold();          // ★
-      const passed = getPassIndices(threshold);      // ★
+      const threshold = getPassThreshold();
+      const passed = getPassIndices(threshold);
       statsEl.innerHTML = [
         `进度：${done}/${total}`,
         `成功 ${okCount}`,
         `总积分 Σ：${fmtNum(sum, 2)}`,
-        `阈值 ≥${threshold}`,                       // ★ 展示阈值
+        `阈值 ≥${threshold}`,
         `达标${passed.length ? passed.join(' ') : '—'}`
       ].join(' &nbsp;|&nbsp; ');
     }
@@ -390,7 +390,7 @@
 
     // —— 并发批量 —— //
     async function runBatch(addresses, season, concurrency = 6) {
-      statsEl.textContent = `共 ${addresses.length} 个地址，开始查询（赛季 ${season}，阈值 ≥${getPassThreshold(season)}）…`; // ★
+      statsEl.textContent = `共 ${addresses.length} 个地址，开始查询（赛季 ${season}，阈值 ≥${getPassThreshold(season)}）…`;
       tbody.innerHTML = '';
       const rows = addresses.map((addr, i) => {
         const tr = rowSkeleton(i, addr);
@@ -448,7 +448,7 @@
             tds[2].textContent = '错误';
             tr.title = err?.message || String(err || '');
           } finally {
-            applyPassClass(tr); // ★ 根据阈值标记行
+            applyPassClass(tr);
             done++;
             updateStats(done, addresses.length, okCount);
           }
@@ -556,7 +556,7 @@
       startBtn.disabled = true; clearBtn.disabled = true;
       sortState.key = null; renderSortIndicators();
       try {
-        const season = parseInt(seasonInput.value || '4', 10) || 4; // 默认 4
+        const season = parseInt(seasonInput.value || '5', 10) || 5; // 默认 5
         currentSeason = season;                                     // ★ 同步当前赛季
         await runBatch(addresses, season, 6);
       } finally {
