@@ -46,7 +46,7 @@
 0xe0aE1c69420953CFffdB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
-      <span class="inp">赛季 <input id="seasonInput" type="number" value="5" min="1" step="1"></span>
+      <span class="inp">赛季 <input id="seasonInput" type="number" value="6" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
 
@@ -55,8 +55,6 @@
         <input id="bonusSeasonToggle" type="checkbox" checked>
         只显示当季任务
       </label>
-
-      <span class="muted">全部接口均走代理 <span class="mono">/api/soneium</span>（总分=季活跃 score）</span>
     </div>
 
     <div id="stats" class="stats muted">尚未开始</div>
@@ -82,11 +80,6 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
-
-    <div class="footer">
-      数据源：<span class="mono">/api/soneium</span>（calc/tx/bonus 统一代理）
-      &nbsp;|&nbsp; 说明：<span class="mono">总分</span> 以 <span class="mono">tx-per-season.score</span> 为准，失败时回退 calculator。
-    </div>
   </div>
 
   <script>
@@ -108,13 +101,13 @@
     };
 
     /* ★ 达标阈值（按季设置；官方如有调整，只改这里） */
-    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81 };
-    let currentSeason = 5; // 点击“开始查询”时会同步为输入框值
+    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81, 6: 81 }; // S6 若阈值不同改这里
+    let currentSeason = 6; // 点击“开始查询”时会同步为输入框值
     const getPassThreshold = (season = currentSeason) => {
       const s = Number(season);
       return Number.isFinite(s) && PASS_THRESHOLD_BY_SEASON[s] != null
         ? PASS_THRESHOLD_BY_SEASON[s]
-        : 81; // 安全回退（如你已知 S5 阈值不同，可改这里或上面的映射）
+        : 81; // 安全回退（如你已知 S6 阈值不同，可改这里或上面的映射）
     };
 
     const startBtn = document.getElementById('startBtn');
@@ -556,7 +549,7 @@
       startBtn.disabled = true; clearBtn.disabled = true;
       sortState.key = null; renderSortIndicators();
       try {
-        const season = parseInt(seasonInput.value || '5', 10) || 5; // 默认 5
+        const season = parseInt(seasonInput.value || '6', 10) || 6; // 默认 6
         currentSeason = season;                                     // ★ 同步当前赛季
         await runBatch(addresses, season, 6);
       } finally {
