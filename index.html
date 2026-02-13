@@ -46,7 +46,8 @@
 0xe0aE1c69420953CFffdB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
-      <span class="inp">赛季 <input id="seasonInput" type="number" value="6" min="1" step="1"></span>
+      <!-- ★ 默认赛季改为 7 -->
+      <span class="inp">赛季 <input id="seasonInput" type="number" value="7" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
 
@@ -101,13 +102,13 @@
     };
 
     /* ★ 达标阈值（按季设置；官方如有调整，只改这里） */
-    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81, 6: 81 }; // S6 若阈值不同改这里
-    let currentSeason = 6; // 点击“开始查询”时会同步为输入框值
+    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81, 6: 81, 7: 81 }; // ★ S7 阈值如不同改这里
+    let currentSeason = 7; // ★ 默认季改为 7（点击“开始查询”时会同步为输入框值）
     const getPassThreshold = (season = currentSeason) => {
       const s = Number(season);
       return Number.isFinite(s) && PASS_THRESHOLD_BY_SEASON[s] != null
         ? PASS_THRESHOLD_BY_SEASON[s]
-        : 81; // 安全回退（如你已知 S6 阈值不同，可改这里或上面的映射）
+        : 81; // 安全回退（如你已知 S7 阈值不同，可改这里或上面的映射）
     };
 
     const startBtn = document.getElementById('startBtn');
@@ -549,8 +550,9 @@
       startBtn.disabled = true; clearBtn.disabled = true;
       sortState.key = null; renderSortIndicators();
       try {
-        const season = parseInt(seasonInput.value || '6', 10) || 6; // 默认 6
-        currentSeason = season;                                     // ★ 同步当前赛季
+        // ★ 默认季改为 7
+        const season = parseInt(seasonInput.value || '7', 10) || 7;
+        currentSeason = season; // ★ 同步当前赛季（影响 bonus 的“只显示当季任务”过滤）
         await runBatch(addresses, season, 6);
       } finally {
         startBtn.disabled = false; clearBtn.disabled = false;
