@@ -46,8 +46,8 @@
 0xe0aE1c69420953CFffdB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
-      <!-- ★ 默认赛季改为 7 -->
-      <span class="inp">赛季 <input id="seasonInput" type="number" value="7" min="1" step="1"></span>
+      <!-- ★ 默认赛季改为 8 -->
+      <span class="inp">赛季 <input id="seasonInput" type="number" value="8" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
 
@@ -85,8 +85,8 @@
 
   <script>
     // —— 配置 —— //
-    const PROXY_BASE = '/api/soneium';                  // 统一代理
-    const PORTAL_ORIGIN = 'https://debank.com';         // 仅用于展示跳转链接
+    const PROXY_BASE = '/api/soneium';
+    const PORTAL_ORIGIN = 'https://debank.com';
 
     // 用“查询参数”方式调用代理（与 pages/api/soneium.js 匹配）
     const API = {
@@ -102,13 +102,13 @@
     };
 
     /* ★ 达标阈值（按季设置；官方如有调整，只改这里） */
-    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81, 6: 81, 7: 81 }; // ★ S7 阈值如不同改这里
-    let currentSeason = 7; // ★ 默认季改为 7（点击“开始查询”时会同步为输入框值）
+    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81, 6: 81, 7: 81, 8: 81 };
+    let currentSeason = 8; // ★ 默认季改为 8
     const getPassThreshold = (season = currentSeason) => {
       const s = Number(season);
       return Number.isFinite(s) && PASS_THRESHOLD_BY_SEASON[s] != null
         ? PASS_THRESHOLD_BY_SEASON[s]
-        : 81; // 安全回退（如你已知 S7 阈值不同，可改这里或上面的映射）
+        : 81;
     };
 
     const startBtn = document.getElementById('startBtn');
@@ -189,8 +189,8 @@
 
       // 情况 A：后端返回数字（该季无数据 -> 0）
       if (typeof item === 'number') {
-        tds[3].textContent = '-'; // 基础分
-        tds[4].textContent = '-'; // 流动性
+        tds[3].textContent = '-';
+        tds[4].textContent = '-';
         tds[10].textContent = '';
         tds[11].textContent = '';
         tr.dataset.base = '';
@@ -201,7 +201,7 @@
 
       // 情况 B：对象
       if (!item || typeof item !== 'object') {
-        return; // 不覆盖任何单元格
+        return;
       }
 
       // 兼容不同字段名
@@ -272,7 +272,7 @@
 
       const filtered = (onlyCurrent && Number.isFinite(seasonNow))
         ? list.filter(w => Number(w.season) === seasonNow)
-        : list.slice(); // 不过滤时复制一份
+        : list.slice();
 
       const totalWeeks = filtered.length;
       let doneWeeks = 0;
@@ -300,7 +300,6 @@
 
       let tip = lines.length ? lines.join('\n\n') : '—';
 
-      // ★ 如果隐藏了其它赛季任务，在 tooltip 里加一句说明
       if (onlyCurrent && filtered.length !== list.length) {
         const hiddenCount = list.length - filtered.length;
         tip += `\n\n（已隐藏其它赛季任务 ${hiddenCount} 个）`;
@@ -427,7 +426,6 @@
             }
 
             if (bonusRes.status === 'fulfilled') {
-              // ★ 保存原始 bonus 数据，方便切换「只显示当季任务」时重算
               tr.dataset.bonusRaw = JSON.stringify(bonusRes.value);
               updateRowBonus(tr, bonusRes.value);
             } else {
@@ -522,7 +520,6 @@
       bonusSeasonToggle.addEventListener('change', () => {
         bonusOnlyCurrentSeason = bonusSeasonToggle.checked;
 
-        // 遍历所有行，用保存的 bonusRaw 重新渲染
         tbody.querySelectorAll('tr').forEach(tr => {
           const raw = tr.dataset.bonusRaw;
           if (!raw) return;
@@ -550,9 +547,9 @@
       startBtn.disabled = true; clearBtn.disabled = true;
       sortState.key = null; renderSortIndicators();
       try {
-        // ★ 默认季改为 7
-        const season = parseInt(seasonInput.value || '7', 10) || 7;
-        currentSeason = season; // ★ 同步当前赛季（影响 bonus 的“只显示当季任务”过滤）
+        // ★ 默认季改为 8
+        const season = parseInt(seasonInput.value || '8', 10) || 8;
+        currentSeason = season;
         await runBatch(addresses, season, 6);
       } finally {
         startBtn.disabled = false; clearBtn.disabled = false;
