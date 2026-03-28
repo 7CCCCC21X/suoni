@@ -38,7 +38,14 @@ const DEFAULT_SEASON = Number(process.env.DEFAULT_SEASON || 8);                 
 const DEFAULT_TX_SEASON = Number(process.env.DEFAULT_TX_SEASON || DEFAULT_SEASON); // tx 默认季
 
 // EVM 地址粗校验
-const isAddress = (s) => typeof s === 'string' && /^0x[a-fA-F0-9]{40}$/i.test(s);
+const RE_ADDRESS = /^0x[a-fA-F0-9]{40}$/i;
+const isAddress = (s) => typeof s === 'string' && RE_ADDRESS.test(s);
+
+// 设置 CORS 头并返回 JSON 响应的辅助函数
+function corsJson(res, status, body) {
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
+  return res.status(status).json(body);
+}
 
 // 自我代理保护：避免把请求再转回自己造成递归
 function isSelfProxy(target, req) {
@@ -89,8 +96,7 @@ export default async function handler(req, res) {
     return res.status(204).end();
   }
   if (req.method !== 'GET') {
-    Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return corsJson(res, 405, { error: 'Method Not Allowed' });
   }
 
   const url = new URL(req.url, 'http://localhost'); // 仅解析 query
@@ -112,16 +118,13 @@ export default async function handler(req, res) {
 
   // 参数校验
   if (!['calc', 'tx', 'bonus'].includes(type)) {
-    Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
-    return res.status(400).json({ error: 'Invalid type', allow: ['calc', 'tx', 'bonus'] });
+    return corsJson(res, 400, { error: 'Invalid type', allow: ['calc', 'tx', 'bonus'] });
   }
   if (!isAddress(address)) {
-    Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
-    return res.status(400).json({ error: 'Invalid address' });
+    return corsJson(res, 400, { error: 'Invalid address' });
   }
   if ((type === 'tx' || type === 'calc') && hasSeasonParam && (!Number.isFinite(season) || season < 0)) {
-    Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
-    return res.status(400).json({ error: 'Invalid season' });
+    return corsJson(res, 400, { error: 'Invalid season' });
   }
 
   // 组装上游 URL（严格白名单）
@@ -142,8 +145,7 @@ export default async function handler(req, res) {
 
   // 防止自我代理递归
   if (isSelfProxy(target, req)) {
-    Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
-    return res.status(400).json({ error: 'Refusing to proxy to self', target });
+    return corsJson(res, 400, { error: 'Refusing to proxy to self', target });
   }
 
   try {
@@ -191,7 +193,6 @@ export default async function handler(req, res) {
     Object.entries(responseHeaders).forEach(([k, v]) => res.setHeader(k, v));
     return res.status(status).send(bodyText);
   } catch (e) {
-    Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
-    return res.status(502).json({ error: 'Bad gateway', detail: String(e) });
+    return corsJson(res, 502, { error: 'Bad gateway', detail: String(e) });
   }
 }

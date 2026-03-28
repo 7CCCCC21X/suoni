@@ -183,9 +183,15 @@
       return tr;
     }
 
+    // —— 获取行内所有 td（缓存到 tr._tds 避免重复查询 DOM） —— //
+    function getTds(tr) {
+      if (!tr._tds) tr._tds = tr.querySelectorAll('td');
+      return tr._tds;
+    }
+
     // —— 写入：calculator（保留用作补充信息 + 兜底） —— //
     function updateRowBase(tr, item) {
-      const tds = tr.querySelectorAll('td');
+      const tds = getTds(tr);
 
       // 情况 A：后端返回数字（该季无数据 -> 0）
       if (typeof item === 'number') {
@@ -200,9 +206,7 @@
       }
 
       // 情况 B：对象
-      if (!item || typeof item !== 'object') {
-        return;
-      }
+      if (!item || typeof item !== 'object') return;
 
       // 兼容不同字段名
       const base  = item.baseScore ?? item.base ?? item.basePoints;
@@ -224,7 +228,7 @@
       tds[10].textContent = fmtDate(createdAt);
       if (!tr.dataset.updated) tds[11].textContent = fmtDate(updatedAt);
 
-      tr.title = (item && typeof item === 'object') ? JSON.stringify(item, null, 2) : String(item);
+      tr.title = JSON.stringify(item, null, 2);
       tr.dataset.base = numOrEmpty(base);
       tr.dataset.liquidity = numOrEmpty(liq);
       tr.dataset.created = createdAt ? Date.parse(createdAt) : '';
@@ -232,10 +236,10 @@
 
     // —— 写入：季活跃（tx-per-season） —— //
     function updateRowSeason(tr, item) {
-      const tds = tr.querySelectorAll('td');
       if (!item || typeof item !== 'object') return;
+      const tds = getTds(tr);
 
-      // 以季分 score 作为“总分”
+      // 以季分 score 作为”总分”
       const seasonScore = Number(item.score);
       if (Number.isFinite(seasonScore)) {
         tds[2].textContent = fmtNum(seasonScore, 2);
@@ -263,7 +267,7 @@
 
     // —— 写入：加成任务（bonus-dapp） —— //
     function updateRowBonus(tr, list) {
-      const tds = tr.querySelectorAll('td');
+      const tds = getTds(tr);
       if (!Array.isArray(list)) return;
 
       // ★ 是否只看当前赛季的任务（season 字段 == currentSeason）
@@ -357,13 +361,20 @@
     }
 
     function updateStats(done, total, okCount) {
-      let sum = 0;
-      tbody.querySelectorAll('tr').forEach(tr => {
-        const v = parseFloat(tr.dataset.total);
-        if (Number.isFinite(v)) sum += v;
-      });
       const threshold = getPassThreshold();
-      const passed = getPassIndices(threshold);
+      let sum = 0;
+      const passed = [];
+      const rows = tbody.querySelectorAll('tr');
+      for (let i = 0; i < rows.length; i++) {
+        const tr = rows[i];
+        const v = parseFloat(tr.dataset.total);
+        if (Number.isFinite(v)) {
+          sum += v;
+          if (v >= threshold) passed.push(String(Number(tr.dataset.index) + 1));
+        }
+      }
+      // 按输入顺序排列达标序号
+      passed.sort((a, b) => Number(a) - Number(b));
       statsEl.innerHTML = [
         `进度：${done}/${total}`,
         `成功 ${okCount}`,
@@ -408,35 +419,33 @@
               fetchBonus(addr)
             ]);
 
+            const tds = getTds(tr);
+
             if (baseRes.status === 'fulfilled') {
               updateRowBase(tr, baseRes.value);
             } else {
-              tr.querySelectorAll('td')[3].textContent = '-';
-              tr.querySelectorAll('td')[4].textContent = '-';
+              tds[3].textContent = '-';
+              tds[4].textContent = '-';
             }
 
             if (seasonRes.status === 'fulfilled') {
               updateRowSeason(tr, seasonRes.value);
+              okCount++;
             } else {
-              const cell = tr.querySelectorAll('td')[2];
-              if (!tr.dataset.total) {
-                cell.textContent = '错误';
-              }
-              cell.title = seasonRes.reason?.message || String(seasonRes.reason || '');
+              if (!tr.dataset.total) tds[2].textContent = '错误';
+              tds[2].title = seasonRes.reason?.message || String(seasonRes.reason || '');
             }
 
             if (bonusRes.status === 'fulfilled') {
               tr.dataset.bonusRaw = JSON.stringify(bonusRes.value);
               updateRowBonus(tr, bonusRes.value);
             } else {
-              tr.querySelectorAll('td')[9].textContent = '-';
-              tr.querySelectorAll('td')[9].title = bonusRes.reason?.message || String(bonusRes.reason || '');
+              tds[9].textContent = '-';
+              tds[9].title = bonusRes.reason?.message || String(bonusRes.reason || '');
             }
 
-            if (seasonRes.status === 'fulfilled') okCount++;
-
           } catch (err) {
-            const tds = tr.querySelectorAll('td');
+            const tds = getTds(tr);
             tds[2].textContent = '错误';
             tr.title = err?.message || String(err || '');
           } finally {
@@ -493,11 +502,15 @@
         const as = String(av || ''), bs = String(bv || '');
         return as.localeCompare(bs) * dir;
       });
-      rows.forEach((tr, i) => {
-        tbody.appendChild(tr);
-        const tdIndex = tr.querySelector('td');
-        if (tdIndex) tdIndex.textContent = String(i + 1);
-      });
+      // 使用 DocumentFragment 减少重排次数
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < rows.length; i++) {
+        const tr = rows[i];
+        const tds = getTds(tr);
+        if (tds[0]) tds[0].textContent = String(i + 1);
+        frag.appendChild(tr);
+      }
+      tbody.appendChild(frag);
     }
 
     function renderSortIndicators() {
