@@ -46,8 +46,8 @@
 0xe0aE1c69420953CFffdB4efeFf0Aa9BAe6a28884"></textarea>
 
     <div class="controls">
-      <!-- ★ 默认赛季改为 8 -->
-      <span class="inp">赛季 <input id="seasonInput" type="number" value="8" min="1" step="1"></span>
+      <!-- ★ 默认赛季改为 9 -->
+      <span class="inp">赛季 <input id="seasonInput" type="number" value="9" min="1" step="1"></span>
       <button id="startBtn">开始查询</button>
       <button id="clearBtn" class="secondary">清空结果</button>
 
@@ -102,8 +102,8 @@
     };
 
     /* ★ 达标阈值（按季设置；官方如有调整，只改这里） */
-    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81, 6: 81, 7: 81, 8: 81 };
-    let currentSeason = 8; // ★ 默认季改为 8
+    const PASS_THRESHOLD_BY_SEASON = { 1: 80, 2: 80, 3: 80, 4: 81, 5: 81, 6: 81, 7: 81, 8: 81, 9: 81 };
+    let currentSeason = 9; // ★ 默认季改为 9
     const getPassThreshold = (season = currentSeason) => {
       const s = Number(season);
       return Number.isFinite(s) && PASS_THRESHOLD_BY_SEASON[s] != null
@@ -131,7 +131,7 @@
       ));
     }
     function isAddress(s) { return /^0x[a-fA-F0-9]{40}$/.test(s); }
-    function fmtNum(n, digits=2) {
+    function fmtNum(n, digits = 2) {
       if (n === null || n === undefined || isNaN(n)) return '';
       const num = Number(n);
       return Number.isInteger(num) ? String(num) : num.toFixed(digits);
@@ -167,7 +167,7 @@
       const profileHref = `${PORTAL_ORIGIN}/profile/${addr}`;
 
       tr.innerHTML = `
-        <td class="mono">${i+1}</td>
+        <td class="mono">${i + 1}</td>
         <td class="mono"><a class="addr" href="${profileHref}" target="_blank" rel="noopener noreferrer">${addr}</a></td>
         <td class="mono muted">查询中…</td>
         <td class="mono muted">-</td>
@@ -205,22 +205,22 @@
       }
 
       // 兼容不同字段名
-      const base  = item.baseScore ?? item.base ?? item.basePoints;
-      const liq   = item.liquidityContributionPoints
-                 ?? item.allTimeLiquidityScore
-                 ?? item.tvl?.allTimeLiquidityScore
-                 ?? item.tvl?.scoreContributionUsd;
+      const base = item.baseScore ?? item.base ?? item.basePoints;
+      const liq = item.liquidityContributionPoints
+        ?? item.allTimeLiquidityScore
+        ?? item.tvl?.allTimeLiquidityScore
+        ?? item.tvl?.scoreContributionUsd;
 
       // 时间容错
       const createdAt = item.createdAt
-                     ?? (item.scoreCreatedAt ? new Date(item.scoreCreatedAt).toISOString() : undefined);
+        ?? (item.scoreCreatedAt ? new Date(item.scoreCreatedAt).toISOString() : undefined);
       const updatedAtRaw = item.updatedAt ?? item.scoreLastUpdated;
       const updatedAt = (typeof updatedAtRaw === 'number')
         ? new Date(updatedAtRaw).toISOString()
         : updatedAtRaw;
 
       tds[3].textContent = base != null ? fmtNum(base, 4) : '';
-      tds[4].textContent = liq  != null ? fmtNum(liq, 2)  : '';
+      tds[4].textContent = liq != null ? fmtNum(liq, 2) : '';
       tds[10].textContent = fmtDate(createdAt);
       if (!tr.dataset.updated) tds[11].textContent = fmtDate(updatedAt);
 
@@ -248,9 +248,9 @@
       tds[8].textContent = fmtNum(item.streak, 0);
 
       tr.dataset.seasonScore = numOrEmpty(item.score);
-      tr.dataset.seasonTx    = numOrEmpty(item.totalTransactions);
-      tr.dataset.uniqueDays  = numOrEmpty(item.uniqueDays);
-      tr.dataset.streak      = numOrEmpty(item.streak);
+      tr.dataset.seasonTx = numOrEmpty(item.totalTransactions);
+      tr.dataset.uniqueDays = numOrEmpty(item.uniqueDays);
+      tr.dataset.streak = numOrEmpty(item.streak);
 
       if (item.scoreLastUpdated != null) {
         tds[11].textContent = fmtDate(item.scoreLastUpdated);
@@ -317,9 +317,11 @@
       const r = await fetch(url);
       const t = await r.text();
       let j;
-      try { j = JSON.parse(t); } catch {
+      try {
+        j = JSON.parse(t);
+      } catch {
         if (t.trim() === '0') return 0;
-        throw new Error(`calculator 解析失败：${t?.slice(0,200) || '空'}`);
+        throw new Error(`calculator 解析失败：${t?.slice(0, 200) || '空'}`);
       }
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
       return j;
@@ -330,7 +332,11 @@
       const r = await fetch(url);
       const t = await r.text();
       let j;
-      try { j = JSON.parse(t); } catch { throw new Error(`tx-per-season 解析失败：${t?.slice(0,200)}`); }
+      try {
+        j = JSON.parse(t);
+      } catch {
+        throw new Error(`tx-per-season 解析失败：${t?.slice(0, 200)}`);
+      }
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
       return j;
     }
@@ -339,7 +345,12 @@
       const url = API.bonus(addr);
       const r = await fetch(url);
       const t = await r.text();
-      let j; try { j = JSON.parse(t); } catch { throw new Error(`bonus-dapp 解析失败：${t?.slice(0,200)}`); }
+      let j;
+      try {
+        j = JSON.parse(t);
+      } catch {
+        throw new Error(`bonus-dapp 解析失败：${t?.slice(0, 200)}`);
+      }
       if (!r.ok) throw new Error(j?.message || `HTTP ${r.status}`);
       return j;
     }
@@ -369,7 +380,7 @@
         `成功 ${okCount}`,
         `总积分 Σ：${fmtNum(sum, 2)}`,
         `阈值 ≥${threshold}`,
-        `达标${passed.length ? passed.join(' ') : '—'}`
+        `达标 ${passed.length ? passed.join(' ') : '—'}`
       ].join(' &nbsp;|&nbsp; ');
     }
 
@@ -434,7 +445,6 @@
             }
 
             if (seasonRes.status === 'fulfilled') okCount++;
-
           } catch (err) {
             const tds = tr.querySelectorAll('td');
             tds[2].textContent = '错误';
@@ -446,7 +456,7 @@
           }
         }
       }
-      const workers = Array.from({length: Math.min(concurrency, addresses.length)}, worker);
+      const workers = Array.from({ length: Math.min(concurrency, addresses.length) }, worker);
       await Promise.all(workers);
       statsEl.innerHTML += ' &nbsp;|&nbsp; 完成 ✅';
     }
@@ -454,7 +464,7 @@
     // —— 排序 —— //
     const ths = document.querySelectorAll('thead th[data-sort]');
     ths.forEach(th => th.classList.add('sortable'));
-    const numericOrDateKeys = new Set(['total','base','liquidity','seasonScore','seasonTx','uniqueDays','streak','bonusRatio','created','updated']);
+    const numericOrDateKeys = new Set(['total', 'base', 'liquidity', 'seasonScore', 'seasonTx', 'uniqueDays', 'streak', 'bonusRatio', 'created', 'updated']);
 
     ths.forEach(th => {
       th.addEventListener('click', () => {
@@ -474,7 +484,7 @@
     function getVal(tr, key) {
       const ds = tr.dataset;
       if (key === 'address') return (ds.address || '');
-      if (key === 'index')   return parseInt(ds.index || '', 10);
+      if (key === 'index') return parseInt(ds.index || '', 10);
       if (key === 'created' || key === 'updated') return parseInt(ds[key] || '', 10);
       const v = parseFloat(ds[key]);
       return Number.isFinite(v) ? v : NaN;
@@ -544,15 +554,18 @@
       if (invalids.length) {
         console.warn('无效地址已忽略：', invalids);
       }
-      startBtn.disabled = true; clearBtn.disabled = true;
-      sortState.key = null; renderSortIndicators();
+      startBtn.disabled = true;
+      clearBtn.disabled = true;
+      sortState.key = null;
+      renderSortIndicators();
       try {
-        // ★ 默认季改为 8
-        const season = parseInt(seasonInput.value || '8', 10) || 8;
+        // ★ 默认季改为 9
+        const season = parseInt(seasonInput.value || '9', 10) || 9;
         currentSeason = season;
         await runBatch(addresses, season, 6);
       } finally {
-        startBtn.disabled = false; clearBtn.disabled = false;
+        startBtn.disabled = false;
+        clearBtn.disabled = false;
       }
     });
 
@@ -560,7 +573,8 @@
       addrInput.value = '';
       tbody.innerHTML = '';
       statsEl.textContent = '已清空';
-      sortState.key = null; renderSortIndicators();
+      sortState.key = null;
+      renderSortIndicators();
     });
   </script>
 </body>
